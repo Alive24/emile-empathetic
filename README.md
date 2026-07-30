@@ -1,6 +1,7 @@
-# Behavioral Outlier Detector
+# Emile (Behavioral Outlier Detector)
 
-**A guardrail layer that infers a person's psychological state from *how* they're communicating, not from what they say when asked — and routes an empathetic agent's behavior accordingly.**
+**Emile is a guardrail that listens to how someone is talking, not just what they're saying — so an AI assistant knows when to slow down, when to check in, and when to stop helping altogether.
+Because nobody in crisis announces it. They just go quiet, and every piece of software on the market takes 'I'm fine' at face value**
 
 Built for Track 2 (Guardrails) of the Empathetic Agents hackathon — EverSettled × ElevenLabs × Lovable.
 
