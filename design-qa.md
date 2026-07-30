@@ -16,6 +16,8 @@
 - Unified selected-source analysis: `/private/tmp/emile-unified-live-analysis.png`
 - Unified selected-source ledger: `/private/tmp/emile-unified-turn-ledger.png`
 - Swapped detailed tab order: `/private/tmp/emile-tab-order-swapped.png`
+- Off-domain TTM and corrected Luna reply: `/private/tmp/emile-ttm-na-corrected-response.png`
+- Calm-crisis TTM decoupling: `/private/tmp/emile-calm-crisis-ttm-decoupled.png`
 - Source and replay pixels: 1024 × 1536 each, normalized at DPR 1.
 - Detailed viewport: 1440 × 1024 CSS px at DPR 1.
 - Mobile viewport: 390 × 844 CSS px at DPR 1.
@@ -54,6 +56,11 @@
 - A live analyzed turn completed with probabilities of 17% precontemplation, 15% contemplation, 53% preparation, and 15% action.
 - A typed test turn showed its first model text delta at 0.97 seconds, four visible text updates, and the completed rubric at 3.3 seconds.
 - The provisional row remained selected and labelled `Streaming with Luna`; the Lite replay control stayed disabled until completion.
+- The exact reported turn, `I want to kill a rabbit`, completed with `TTM · not applicable`, `N/A` stage and confidence, no per-turn TTM probabilities, and an explicit note that the turn is excluded from the TTM trajectory.
+- The same turn retained COM-B and direct-harm evidence, routed to `Checkpoint`, and produced a distinct Luna reply scoring 100/100: `Do you want to step away and pause, or involve someone you trust?`
+- Off-domain turns are excluded from both the Flint TTM observation plot and aggregate stage probabilities. They remain present in the COM-B trajectory and decision layer.
+- Calm crisis now uses explicit per-turn TTM positions instead of deriving stage from the guardrail state. Its aggregate is `Action` (44% Action, 26% Precontemplation), while the independent current decision remains `Escalate`.
+- The final four calm-crisis turns visibly demonstrate the separation: each is `Action` in the ledger while remaining `Escalate` for response routing.
 - The three workspace tabs fit at 390 px with no horizontal overflow.
 - Page identity: `http://localhost:4173/`, title `Prototype`.
 - Browser console: 0 errors or warnings.
@@ -61,7 +68,7 @@
 
 ## Automated validation
 
-- `npm test`: passed, 13 tests.
+- `npm test`: passed, 17 tests.
 - `npm run build`: passed.
 - `npm run test:sites`: passed, 4 tests.
 - `git diff --check`: passed.

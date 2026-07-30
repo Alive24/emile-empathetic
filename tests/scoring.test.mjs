@@ -8,7 +8,11 @@ import {
   summarizeConversation,
 } from "../src/lib/scoring.js";
 import { buildInstantTurn } from "../src/lib/instantAnalysis.js";
-import { extractStreamedAssistant } from "../server/openaiAnalysis.mjs";
+import {
+  buildReplyReadyResult,
+  extractStreamedAssistant,
+  shouldRetryResponseEvaluation,
+} from "../server/openaiAnalysis.mjs";
 import {
   isAssistantEcho,
   isPotentialAssistantEcho,
@@ -199,6 +203,115 @@ test("TTM probabilities are normalized and drive the selected stage", () => {
   assert.equal(turn.stage, "Contemplation");
   assert.equal(turn.stageConfidence, 0.6);
   assert.ok(Math.abs(turn.stagePosition - 1.3) < 0.001);
+});
+
+test("off-domain turns do not distort aggregate TTM probabilities", () => {
+  const turns = scoreConversation([
+    {
+      id: "applicable-one",
+      user: "I might look at the bill.",
+      assistant: "Response",
+      stagePosition: 1,
+      stageProbabilities: {
+        precontemplation: 0,
+        contemplation: 1,
+        preparation: 0,
+        action: 0,
+      },
+      stageConfidence: 1,
+      meaningfulness: 1,
+      features: {},
+      appropriateness: 90,
+      evidence: [],
+      rationale: "",
+    },
+    {
+      id: "applicable-two",
+      user: "I have opened the bill.",
+      assistant: "Response",
+      stagePosition: 3,
+      stageProbabilities: {
+        precontemplation: 0,
+        contemplation: 0,
+        preparation: 0,
+        action: 1,
+      },
+      stageConfidence: 1,
+      meaningfulness: 1,
+      features: {},
+      appropriateness: 90,
+      evidence: [],
+      rationale: "",
+    },
+    {
+      id: "off-domain",
+      user: "I want to kill a rabbit.",
+      assistant: "Response",
+      ttmApplicable: false,
+      stagePosition: 0,
+      stageProbabilities: {
+        precontemplation: 1,
+        contemplation: 0,
+        preparation: 0,
+        action: 0,
+      },
+      stageConfidence: 1,
+      meaningfulness: 1,
+      features: {},
+      appropriateness: 90,
+      evidence: [],
+      rationale: "",
+    },
+  ]);
+  const summary = summarizeConversation(turns);
+
+  assert.equal(turns[2].ttmApplicable, false);
+  assert.equal(summary.stageProbabilities.precontemplation, 0);
+  assert.ok(summary.stageProbabilities.contemplation > 0);
+  assert.ok(summary.stageProbabilities.action > 0);
+});
+
+test("hard-failure or low-fit responses receive one correction pass", () => {
+  assert.equal(
+    shouldRetryResponseEvaluation({ hardFailure: true, overall: 80 }),
+    true,
+  );
+  assert.equal(
+    shouldRetryResponseEvaluation({ hardFailure: false, overall: 69 }),
+    true,
+  );
+  assert.equal(
+    shouldRetryResponseEvaluation({ hardFailure: false, overall: 70 }),
+    false,
+  );
+});
+
+test("reply-ready payload exposes the routed reply before evaluation", () => {
+  const result = buildReplyReadyResult({
+    transcript: "Can you help me read this bill?",
+    extraction: {
+      ttmApplicable: true,
+      stagePosition: 2,
+      stageProbabilities: {
+        precontemplation: 0,
+        contemplation: 0,
+        preparation: 1,
+        action: 0,
+      },
+    },
+    assistant: "Start with the provider name and the total amount.",
+    authoritativeTurn: {
+      decision: "Continue",
+      billExposure: true,
+    },
+    analysisModel: "test-analysis-model",
+    transcriptionModel: "test-transcription-model",
+  });
+
+  assert.equal(result.analysis.assistant, "Start with the provider name and the total amount.");
+  assert.equal(result.analysis.decision, "Continue");
+  assert.equal(result.analysis.evaluationPending, true);
+  assert.equal(result.models.analysis, "test-analysis-model");
 });
 
 test("instant analysis creates a bounded provisional turn", () => {
@@ -399,5 +512,19 @@ test("all Lite replay logs can drive the scored turn ledger", () => {
       scenario.turns.map((turn) => turn.state),
     );
     assert.ok(scoredTurns.every((turn) => turn.evidence.length >= 1));
+    assert.ok(rawTurns.every((turn) => Number.isFinite(turn.stagePosition)));
   }
+});
+
+test("calm crisis keeps TTM independent from escalation state", () => {
+  const turns = scoreConversation(replayScenarioToRawTurns("calm-crisis"));
+  const summary = summarizeConversation(turns);
+
+  assert.equal(turns[7].decision, "Escalate");
+  assert.equal(turns[7].stage, "Action");
+  assert.notEqual(summary.stage, "Precontemplation");
+  assert.ok(
+    summary.stageProbabilities.action >
+      summary.stageProbabilities.precontemplation,
+  );
 });

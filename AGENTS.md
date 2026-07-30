@@ -14,6 +14,7 @@ Build app UI in `src/`. Keep `.openai/hosting.json`, `worker/index.js`, `scripts
 - Use the approved warm Emile visual language across both views: warm off-white background, clean sans-serif, flat paper-like cards, hairline borders, generous whitespace, and restrained semantic colour.
 - Preserve the detailed view's persistent microphone rail, Live analysis / Turn ledger tabs, Flint charts, recording, OpenAI inference, ElevenLabs transcription, and reply playback.
 - Stream only Luna's newly generated assistant reply into the provisional ledger row. Keep the assistant cell empty until Luna produces reply text; never place the user transcript or locally generated holding copy there. Reject and retry transcript echoes before completing a turn.
+- Do not keep Luna's completed reply behind the independent evaluator. Finalize the routed reply in the ledger immediately, show that response fit is still being checked, and patch the same row with the evaluator result or corrective rewrite afterward.
 - Keep the replay view front-end-only with scripted scenarios, one turn revealed per click, state bars, and an eleven-step trajectory strip.
 - Use the three Lite replay scenarios as the only detailed-view conversation sources. The selected `Conversation log` is the active live conversation for both Turn ledger and Live analysis; append recordings and typed turns to that source, preserve them when switching sources, and never auto-switch to another ledger.
 - In Lite replay, fill the trajectory strip left-to-right as turns appear and automatically scroll to the page bottom after each new turn.
@@ -36,7 +37,9 @@ Use [Emile master build flow · MD](https://docs.google.com/document/d/1B93qEevx
   - `opportunity = 0.50 × cannotTalkLong + 0.30 × lateNight + 0.20 × interruption`
   - `motivation = 0.40 × minimalAcknowledgement + 0.30 × noQuestionInLastTwoTurns + 0.30 × monopitch`
 - Voice signals are measured only against the conversation's rolling personal baseline, never population norms.
-- TTM stage rules are ordinal and conservative. If no stage matches cleanly, retain the previous stage; do not invent a classification.
+- TTM stage rules are ordinal and conservative. If TTM is off-domain or not applicable, retain the previous stage only internally for routing continuity; show `N/A` in the turn ledger, hide turn probabilities and confidence, and exclude the turn from the TTM chart and aggregate.
+- Scripted replay fixtures must define their TTM positions per turn. Never derive TTM readiness from the Continue/Soften/Checkpoint/Escalate state; response routing severity and behaviour-stage readiness are independent dimensions.
+- Luna responses that receive an evaluator hard failure or score below 70 get one corrective rewrite and re-evaluation. Keep the final reply in the assistant field and expose that a revision occurred in the turn evidence.
 - A spike is a feature that crosses into elevated after at least two normal turns. A continuously elevated feature is not a new spike.
 - A sustained gap is any gap at or above `0.60` for two or more consecutive turns.
 - Decision thresholds for the medical-bills variant:

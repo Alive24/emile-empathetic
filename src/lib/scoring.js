@@ -311,17 +311,26 @@ export function summarizeConversation(turns) {
       (total, turn) => total + turn[field] * turn.aggregateWeight,
       0,
     ) / weightTotal;
+  const applicableTtmTurns = weighted.filter(
+    (turn) => turn.ttmApplicable !== false,
+  );
+  const ttmTurns =
+    applicableTtmTurns.length > 0 ? applicableTtmTurns : weighted;
+  const ttmWeightTotal = ttmTurns.reduce(
+    (total, turn) => total + turn.aggregateWeight,
+    0,
+  );
 
   const stageProbabilities = Object.fromEntries(
     TTM_STAGES.map(({ key }) => [
       key,
       round(
-        weighted.reduce(
+        ttmTurns.reduce(
           (total, turn) =>
             total +
             (turn.stageProbabilities?.[key] ?? 0) * turn.aggregateWeight,
           0,
-        ) / weightTotal,
+        ) / ttmWeightTotal,
         4,
       ),
     ]),
@@ -346,7 +355,8 @@ export function summarizeConversation(turns) {
     appropriateness: Math.round(weightedAverage("appropriateness")),
     decision: latest.decision,
     peakDecision: highestDecision.decision,
-    confidence: latest.stageConfidence >= 0.78 ? "high" : "moderate",
+    confidence:
+      ttmTurns.at(-1).stageConfidence >= 0.78 ? "high" : "moderate",
   };
 }
 

@@ -67,14 +67,20 @@ function stageAxis(title = null) {
 export function buildTtmObservationSpec(turns) {
   const spec = assembleVegaLite({
     data: {
-      values: turns.map((turn, index) => ({
-        turn: `Turn ${index + 1}`,
-        stage: turn.stage,
-        stagePosition: turn.stagePosition,
-        confidence: turn.stageConfidence,
-        meaningfulness: turn.meaningfulness,
-        decision: turn.decision,
-      })),
+      values: turns.flatMap((turn, index) =>
+        turn.ttmApplicable === false
+          ? []
+          : [
+              {
+                turn: `Turn ${index + 1}`,
+                stage: turn.stage,
+                stagePosition: turn.stagePosition,
+                confidence: turn.stageConfidence,
+                meaningfulness: turn.meaningfulness,
+                decision: turn.decision,
+              },
+            ],
+      ),
     },
     semantic_types: {
       turn: "Category",

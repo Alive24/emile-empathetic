@@ -182,6 +182,16 @@ export function openAIAnalysisPlugin(env) {
                 assistant,
               });
             },
+            onReplyReady(payload) {
+              if (!streamStarted) {
+                startEventStream(response);
+                streamStarted = true;
+              }
+              sendStreamEvent(response, {
+                type: "reply.ready",
+                payload,
+              });
+            },
           };
 
           if (resolvedTranscript) {

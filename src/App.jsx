@@ -628,9 +628,10 @@ function TurnLedger({
         {[...turns].reverse().map((turn) => {
           const index = turns.findIndex((candidate) => candidate.id === turn.id);
           const selected = turn.id === selectedId;
-          const turnStagePercentages = allocateStagePercentages(
-            turn.stageProbabilities,
-          );
+          const turnStagePercentages =
+            turn.ttmApplicable === false
+              ? null
+              : allocateStagePercentages(turn.stageProbabilities);
           return (
             <article
               key={turn.id}
@@ -660,10 +661,12 @@ function TurnLedger({
               <div className="turn-row__state">
                 <span className="column-label">
                   {turn.ttmApplicable === false
-                    ? "TTM · retained prior stage"
+                    ? "TTM · not applicable"
                     : "TTM observation"}
                 </span>
-                <strong>{turn.stage}</strong>
+                <strong>
+                  {turn.ttmApplicable === false ? "N/A" : turn.stage}
+                </strong>
                 <CompactGaps turn={turn} />
               </div>
 
@@ -711,8 +714,11 @@ function TurnLedger({
                 >
                   {turn.decision}
                 </span>
-                {turn.provisional && (
+                {turn.streamingAssistant && (
                   <span className="refinement-tag">Streaming with Luna</span>
+                )}
+                {turn.evaluationPending && !turn.streamingAssistant && (
+                  <span className="refinement-tag">Checking response fit</span>
                 )}
               </div>
 
@@ -721,7 +727,11 @@ function TurnLedger({
                   <div className="turn-evidence__summary">
                     <div>
                       <span>Stage confidence</span>
-                      <strong>{formatPercent(turn.stageConfidence)}</strong>
+                      <strong>
+                        {turn.ttmApplicable === false
+                          ? "N/A"
+                          : formatPercent(turn.stageConfidence)}
+                      </strong>
                     </div>
                     <div>
                       <span>Evidence weight</span>
@@ -734,17 +744,24 @@ function TurnLedger({
 
                     <div className="turn-evidence__ttm">
                       <span>TTM stage probabilities</span>
-                      <div
-                        className="ttm-probabilities ttm-probabilities--turn"
-                        aria-label={`Turn ${index + 1} TTM stage probabilities`}
-                      >
-                        {TTM_PROBABILITY_LABELS.map(([key, label]) => (
-                          <div key={key}>
-                            <span>{label}</span>
-                            <strong>{turnStagePercentages[key]}</strong>
-                          </div>
-                        ))}
-                      </div>
+                      {turn.ttmApplicable === false ? (
+                        <p className="ttm-unavailable">
+                          Not applicable to this off-domain turn. Excluded from
+                          the TTM trajectory.
+                        </p>
+                      ) : (
+                        <div
+                          className="ttm-probabilities ttm-probabilities--turn"
+                          aria-label={`Turn ${index + 1} TTM stage probabilities`}
+                        >
+                          {TTM_PROBABILITY_LABELS.map(([key, label]) => (
+                            <div key={key}>
+                              <span>{label}</span>
+                              <strong>{turnStagePercentages[key]}</strong>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -784,6 +801,7 @@ function TurnLedger({
                       {turn.stageRegression && <span>stage regression</span>}
                       {turn.sustainedCapabilityGap && <span>sustained capability gap</span>}
                       {turn.sustainedAbsolutist && <span>sustained absolutist ratio</span>}
+                      {turn.responseRetried && <span>Luna reply revised after evaluator</span>}
                       {turn.evidence.map((signal) => (
                         <span key={signal}>{signal}</span>
                       ))}
@@ -1045,7 +1063,38 @@ export function App() {
     const decoder = new TextDecoder();
     let streamBuffer = "";
     let payload = null;
+    let replyReady = false;
     let resolvedUserText = transcript.trim();
+
+    const applyResultPayload = (resultPayload, evaluationPending) => {
+      if (
+        isAssistantEcho(
+          resultPayload.analysis.assistant,
+          resultPayload.transcript || resolvedUserText,
+        )
+      ) {
+        throw new Error("Luna returned the user transcript instead of a reply.");
+      }
+
+      const rawTurn = {
+        id,
+        timestamp: nextTimestamp,
+        user: resultPayload.transcript,
+        assistant: resultPayload.analysis.assistant,
+        guardGeneratedReply: true,
+        streamingAssistant: false,
+        ...resultPayload.analysis,
+        evaluationPending,
+      };
+
+      updateSourceTurns(sourceId, (current) =>
+        current.some((turn) => turn.id === id)
+          ? current.map((turn) => (turn.id === id ? rawTurn : turn))
+          : [...current, rawTurn],
+      );
+      setSelectedId(id);
+      setDraftTranscript("");
+    };
 
     const handleStreamEvent = (event) => {
       if (event.type === "transcript" && !hasInstantPreview) {
@@ -1082,10 +1131,27 @@ export function App() {
               : turn,
           ),
         );
+      } else if (event.type === "reply.ready") {
+        replyReady = true;
+        applyResultPayload(event.payload, true);
+        setAnalysisStatus({
+          state: "analyzing",
+          message: `Luna replied in ${(
+            (performance.now() - startedAt) /
+            1000
+          ).toFixed(1)}s · checking response fit…`,
+        });
       } else if (event.type === "result") {
         payload = event.payload;
+        applyResultPayload(payload, false);
       } else if (event.type === "error") {
-        throw new Error(event.error || "The turn could not be analyzed.");
+        throw new Error(
+          replyReady
+            ? `Luna replied, but response evaluation did not finish: ${
+                event.error || "unknown evaluator error"
+              }`
+            : event.error || "The turn could not be analyzed.",
+        );
       }
     };
 
@@ -1110,32 +1176,6 @@ export function App() {
     if (!payload) {
       throw new Error("The analysis stream ended before returning a result.");
     }
-    if (
-      isAssistantEcho(
-        payload.analysis.assistant,
-        payload.transcript || resolvedUserText,
-      )
-    ) {
-      throw new Error("Luna returned the user transcript instead of a reply.");
-    }
-
-    const rawTurn = {
-      id,
-      timestamp: nextTimestamp,
-      user: payload.transcript,
-      assistant: payload.analysis.assistant,
-      guardGeneratedReply: true,
-      streamingAssistant: false,
-      ...payload.analysis,
-    };
-
-    updateSourceTurns(sourceId, (current) =>
-      current.some((turn) => turn.id === id)
-        ? current.map((turn) => (turn.id === id ? rawTurn : turn))
-        : [...current, rawTurn],
-    );
-    setSelectedId(id);
-    setDraftTranscript("");
     setAnalysisStatus({
       state: "success",
       message: `Turn analyzed in ${(
