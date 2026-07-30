@@ -19,7 +19,6 @@ import {
 } from "@phosphor-icons/react";
 import { FlintChart } from "./components/FlintChart";
 import { LiteReplay } from "./components/LiteReplay";
-import { DEMO_TURNS } from "./data/demoTurns";
 import {
   REPLAY_SCENARIOS,
   replayScenarioToRawTurns,
@@ -77,13 +76,14 @@ const TTM_PROBABILITY_LABELS = [
   ["action", "Action"],
 ];
 
-const LEDGER_SOURCE_OPTIONS = [
-  { id: "live", label: "Live conversation" },
-  ...Object.values(REPLAY_SCENARIOS).map(({ id, label }) => ({
+const LEDGER_SOURCE_OPTIONS = Object.values(REPLAY_SCENARIOS).map(
+  ({ id, label }) => ({
     id,
     label,
-  })),
-];
+  }),
+);
+const DEFAULT_LEDGER_SOURCE = LEDGER_SOURCE_OPTIONS[0].id;
+const EMPTY_TURNS = [];
 
 function formatPercent(value) {
   return `${Math.round(value * 100)}%`;
@@ -194,16 +194,6 @@ function AppTabs({
         <button
           type="button"
           role="tab"
-          aria-selected={activeTab === "analysis"}
-          className={activeTab === "analysis" ? "is-active" : ""}
-          onClick={() => onChange("analysis")}
-        >
-          <ChartLineUp size={17} weight="bold" />
-          Live analysis
-        </button>
-        <button
-          type="button"
-          role="tab"
           aria-selected={activeTab === "ledger"}
           className={activeTab === "ledger" ? "is-active" : ""}
           onClick={() => onChange("ledger")}
@@ -211,6 +201,16 @@ function AppTabs({
           <ListBullets size={17} weight="bold" />
           Turn ledger
           <span>{turnCount}</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "analysis"}
+          className={activeTab === "analysis" ? "is-active" : ""}
+          onClick={() => onChange("analysis")}
+        >
+          <ChartLineUp size={17} weight="bold" />
+          Live analysis
         </button>
         <button
           type="button"
@@ -577,7 +577,7 @@ function CompactGaps({ turn }) {
   );
 }
 
-function LedgerSourceSwitcher({ value, onChange }) {
+function LedgerSourceSwitcher({ value, onChange, disabled }) {
   return (
     <label className="ledger-source-switcher">
       <span>Conversation log</span>
@@ -585,6 +585,7 @@ function LedgerSourceSwitcher({ value, onChange }) {
         value={value}
         onChange={(event) => onChange(event.target.value)}
         aria-label="Conversation log"
+        disabled={disabled}
       >
         {LEDGER_SOURCE_OPTIONS.map((option) => (
           <option key={option.id} value={option.id}>
@@ -602,6 +603,7 @@ function TurnLedger({
   onSelect,
   source,
   onSourceChange,
+  sourceDisabled,
   onSpeak,
   speakingId,
 }) {
@@ -613,7 +615,11 @@ function TurnLedger({
           <p>Conversation, inferred state, response fit, and routing decision.</p>
         </div>
         <div className="ledger-heading-controls">
-          <LedgerSourceSwitcher value={source} onChange={onSourceChange} />
+          <LedgerSourceSwitcher
+            value={source}
+            onChange={onSourceChange}
+            disabled={sourceDisabled}
+          />
           <span>Newest evidence first · {turns.length} turns</span>
         </div>
       </div>
@@ -800,13 +806,17 @@ function TurnLedger({
 
 export function App() {
   const [prototypeView, setPrototypeView] = useState("detailed");
-  const [visibleCount, setVisibleCount] = useState(4);
-  const [selectedId, setSelectedId] = useState(DEMO_TURNS[3].id);
+  const [visibleCount, setVisibleCount] = useState(
+    REPLAY_SCENARIOS[DEFAULT_LEDGER_SOURCE].turns.length,
+  );
+  const [selectedId, setSelectedId] = useState(
+    `replay-${DEFAULT_LEDGER_SOURCE}-${REPLAY_SCENARIOS[DEFAULT_LEDGER_SOURCE].turns.length}`,
+  );
   const [isPlaying, setIsPlaying] = useState(false);
   const [showRubric, setShowRubric] = useState(false);
   const [activeTab, setActiveTab] = useState("analysis");
-  const [ledgerSource, setLedgerSource] = useState("live");
-  const [liveRawTurns, setLiveRawTurns] = useState([]);
+  const [ledgerSource, setLedgerSource] = useState(DEFAULT_LEDGER_SOURCE);
+  const [liveRawTurnsBySource, setLiveRawTurnsBySource] = useState({});
   const [apiConfig, setApiConfig] = useState({
     loading: true,
     configured: false,
@@ -822,30 +832,39 @@ export function App() {
   const { isRecording, start: startRecording, stop: stopRecording } =
     useTurnRecorder();
 
+  const sourceTurnCount = REPLAY_SCENARIOS[ledgerSource].turns.length;
+  const activeLiveRawTurns =
+    liveRawTurnsBySource[ledgerSource] ?? EMPTY_TURNS;
   const turns = useMemo(
     () =>
       scoreConversation([
-        ...DEMO_TURNS.slice(0, visibleCount),
-        ...liveRawTurns,
+        ...replayScenarioToRawTurns(ledgerSource).slice(0, visibleCount),
+        ...activeLiveRawTurns,
       ]),
-    [liveRawTurns, visibleCount],
-  );
-  const ledgerTurns = useMemo(
-    () =>
-      ledgerSource === "live"
-        ? turns
-        : scoreConversation(replayScenarioToRawTurns(ledgerSource)),
-    [ledgerSource, turns],
+    [activeLiveRawTurns, ledgerSource, visibleCount],
   );
   const latestTurn = turns.at(-1);
   const selectedTurn =
     turns.find((turn) => turn.id === selectedId) ?? latestTurn;
   const summary = summarizeConversation(turns);
-  const displayedTurns = activeTab === "ledger" ? ledgerTurns : turns;
-  const displayedLatestTurn = displayedTurns.at(-1);
-  const displayedSummary =
-    activeTab === "ledger" ? summarizeConversation(ledgerTurns) : summary;
   const analysisBusy = analysisStatus.state === "analyzing";
+
+  const updateSourceTurns = (sourceId, updater) => {
+    setLiveRawTurnsBySource((current) => {
+      const sourceTurns = current[sourceId] ?? [];
+      return {
+        ...current,
+        [sourceId]: updater(sourceTurns),
+      };
+    });
+  };
+
+  const clearSourceTurns = (sourceId) => {
+    setLiveRawTurnsBySource((current) => ({
+      ...current,
+      [sourceId]: [],
+    }));
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -885,41 +904,39 @@ export function App() {
 
     const timer = window.setInterval(() => {
       setVisibleCount((count) => {
-        if (count >= DEMO_TURNS.length) {
+        if (count >= sourceTurnCount) {
           setIsPlaying(false);
           return count;
         }
         const next = count + 1;
-        setSelectedId(DEMO_TURNS[next - 1].id);
+        setSelectedId(`replay-${ledgerSource}-${next}`);
         return next;
       });
     }, 1600);
 
     return () => window.clearInterval(timer);
-  }, [isPlaying]);
+  }, [isPlaying, ledgerSource, sourceTurnCount]);
 
   const handleNext = () => {
-    setLedgerSource("live");
-    if (visibleCount >= DEMO_TURNS.length) {
+    if (visibleCount >= sourceTurnCount) {
       setVisibleCount(1);
-      setLiveRawTurns([]);
-      setSelectedId(DEMO_TURNS[0].id);
+      clearSourceTurns(ledgerSource);
+      setSelectedId(`replay-${ledgerSource}-1`);
       setIsPlaying(false);
       return;
     }
 
     const next = visibleCount + 1;
     setVisibleCount(next);
-    setSelectedId(DEMO_TURNS[next - 1].id);
+    setSelectedId(`replay-${ledgerSource}-${next}`);
   };
 
   const handleReset = () => {
-    setLedgerSource("live");
     audioRef.current?.pause();
     setSpeakingId(null);
     setVisibleCount(1);
-    setLiveRawTurns([]);
-    setSelectedId(DEMO_TURNS[0].id);
+    clearSourceTurns(ledgerSource);
+    setSelectedId(`replay-${ledgerSource}-1`);
     setIsPlaying(false);
     setAnalysisStatus({
       state: "idle",
@@ -928,7 +945,7 @@ export function App() {
   };
 
   const submitTurn = async ({ transcript = "", blob, durationMs = 0 }) => {
-    setLedgerSource("live");
+    const sourceId = ledgerSource;
     const startedAt = performance.now();
     const priorSeconds = latestTurn.timestamp
       .split(":")
@@ -960,7 +977,7 @@ export function App() {
         durationMs,
         previousTurns: turns,
       });
-      setLiveRawTurns((current) => [...current, previewTurn]);
+      updateSourceTurns(sourceId, (current) => [...current, previewTurn]);
       setSelectedId(id);
       setDraftTranscript("");
     }
@@ -1040,7 +1057,7 @@ export function App() {
           durationMs,
           previousTurns: turns,
         });
-        setLiveRawTurns((current) =>
+        updateSourceTurns(sourceId, (current) =>
           current.some((turn) => turn.id === id)
             ? current
             : [...current, previewTurn],
@@ -1054,7 +1071,7 @@ export function App() {
         if (isPotentialAssistantEcho(event.assistant, resolvedUserText)) {
           return;
         }
-        setLiveRawTurns((current) =>
+        updateSourceTurns(sourceId, (current) =>
           current.map((turn) =>
             turn.id === id
               ? {
@@ -1112,7 +1129,7 @@ export function App() {
       ...payload.analysis,
     };
 
-    setLiveRawTurns((current) =>
+    updateSourceTurns(sourceId, (current) =>
       current.some((turn) => turn.id === id)
         ? current.map((turn) => (turn.id === id ? rawTurn : turn))
         : [...current, rawTurn],
@@ -1134,7 +1151,6 @@ export function App() {
     }
 
     if (!isRecording) {
-      setLedgerSource("live");
       if (!apiConfig.configured) {
         setAnalysisStatus({
           state: "error",
@@ -1233,28 +1249,34 @@ export function App() {
         active={isRecording}
         busy={analysisBusy}
         onToggle={handleMicToggle}
-        turnCount={displayedTurns.length}
-        elapsed={displayedLatestTurn.timestamp}
+        turnCount={turns.length}
+        elapsed={latestTurn.timestamp}
       />
 
       <main className="app-main">
         <Header
-          summary={displayedSummary}
-          firstTurn={displayedTurns[0]}
-          latestTurn={displayedLatestTurn}
+          summary={summary}
+          firstTurn={turns[0]}
+          latestTurn={latestTurn}
           isPlaying={isPlaying}
           onPlay={() => {
-            setLedgerSource("live");
-            setIsPlaying((playing) => !playing);
+            if (visibleCount >= sourceTurnCount && !isPlaying) {
+              clearSourceTurns(ledgerSource);
+              setVisibleCount(1);
+              setSelectedId(`replay-${ledgerSource}-1`);
+              setIsPlaying(true);
+            } else {
+              setIsPlaying((playing) => !playing);
+            }
           }}
           onNext={handleNext}
           onReset={handleReset}
-          canAdvance={visibleCount < DEMO_TURNS.length}
+          canAdvance={visibleCount < sourceTurnCount}
         />
 
         <AppTabs
           activeTab={activeTab}
-          turnCount={displayedTurns.length}
+          turnCount={turns.length}
           onChange={setActiveTab}
           onOpenReplay={() => setPrototypeView("replay")}
           replayDisabled={isRecording || analysisBusy}
@@ -1294,7 +1316,7 @@ export function App() {
         {activeTab === "analysis" ? (
           <>
             <div className="analysis-grid">
-              <TtmPanel turns={turns} />
+            <TtmPanel turns={turns} />
               <CombPanel
                 turns={turns}
                 selectedTurn={selectedTurn}
@@ -1307,15 +1329,24 @@ export function App() {
           </>
         ) : (
           <TurnLedger
-            turns={ledgerTurns}
+            turns={turns}
             selectedId={
-              ledgerTurns.some((turn) => turn.id === selectedId)
+              turns.some((turn) => turn.id === selectedId)
                 ? selectedId
-                : ledgerTurns.at(-1).id
+                : turns.at(-1).id
             }
             onSelect={setSelectedId}
             source={ledgerSource}
-            onSourceChange={setLedgerSource}
+            onSourceChange={(sourceId) => {
+              setLedgerSource(sourceId);
+              setVisibleCount(REPLAY_SCENARIOS[sourceId].turns.length);
+              setSelectedId(
+                liveRawTurnsBySource[sourceId]?.at(-1)?.id ??
+                  `replay-${sourceId}-${REPLAY_SCENARIOS[sourceId].turns.length}`,
+              );
+              setIsPlaying(false);
+            }}
+            sourceDisabled={analysisBusy || isRecording}
             onSpeak={
               apiConfig.elevenLabsConfigured ? handleSpeak : undefined
             }

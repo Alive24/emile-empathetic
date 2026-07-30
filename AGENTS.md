@@ -10,12 +10,12 @@ Build app UI in `src/`. Keep `.openai/hosting.json`, `worker/index.js`, `scripts
 
 ## Active visual and product direction
 
-- Keep two first-class views without a global navigator: place `Lite replay` beside `Live analysis` and `Turn ledger`, and provide a clear `Return to ledger` button inside replay.
+- Keep two first-class views without a global navigator: order the detailed workspace tabs as `Turn ledger`, `Live analysis`, then `Lite replay`, and provide a clear `Return to ledger` button inside replay.
 - Use the approved warm Emile visual language across both views: warm off-white background, clean sans-serif, flat paper-like cards, hairline borders, generous whitespace, and restrained semantic colour.
 - Preserve the detailed view's persistent microphone rail, Live analysis / Turn ledger tabs, Flint charts, recording, OpenAI inference, ElevenLabs transcription, and reply playback.
 - Stream only Luna's newly generated assistant reply into the provisional ledger row. Keep the assistant cell empty until Luna produces reply text; never place the user transcript or locally generated holding copy there. Reject and retry transcript echoes before completing a turn.
 - Keep the replay view front-end-only with scripted scenarios, one turn revealed per click, state bars, and an eleven-step trajectory strip.
-- Use the three Lite replay scenarios as shared conversation fixtures for the Turn ledger. Keep a `Conversation log` switcher in the ledger with `Live conversation` as the default, and preserve each scripted scenario's messages, evidence tags, and four-state sequence.
+- Use the three Lite replay scenarios as the only detailed-view conversation sources. The selected `Conversation log` is the active live conversation for both Turn ledger and Live analysis; append recordings and typed turns to that source, preserve them when switching sources, and never auto-switch to another ledger.
 - In Lite replay, fill the trajectory strip left-to-right as turns appear and automatically scroll to the page bottom after each new turn.
 - Treat the prototype as a model-measurement demonstration, not a clinical or production product.
 - Every visible turn must show TTM classification, COM-B gaps, assistant-response appropriateness, and the resulting four-state decision.

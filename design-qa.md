@@ -13,6 +13,9 @@
 - TTM overall probabilities: `/private/tmp/emile-ttm-probabilities-desktop.png`
 - TTM mobile probabilities: `/private/tmp/emile-ttm-probabilities-mobile.png`
 - TTM per-turn probabilities: `/private/tmp/emile-ttm-probabilities-ledger.png`
+- Unified selected-source analysis: `/private/tmp/emile-unified-live-analysis.png`
+- Unified selected-source ledger: `/private/tmp/emile-unified-turn-ledger.png`
+- Swapped detailed tab order: `/private/tmp/emile-tab-order-swapped.png`
 - Source and replay pixels: 1024 × 1536 each, normalized at DPR 1.
 - Detailed viewport: 1440 × 1024 CSS px at DPR 1.
 - Mobile viewport: 390 × 844 CSS px at DPR 1.
@@ -36,11 +39,13 @@
 ## Interaction and browser evidence
 
 - `Lite replay` appears directly beside `Live analysis` and `Turn ledger`.
+- The workspace tab order is `Turn ledger`, `Live analysis`, then `Lite replay`; Live analysis remains the initial active view.
 - Opening replay exposes one `Return to ledger` button; using it returns to the selected Turn ledger tab.
-- The Turn ledger exposes `Live conversation`, `gradual drift`, `calm crisis`, and `frustrated but fine` through one labelled conversation-log selector.
+- The Turn ledger exposes only `gradual drift`, `calm crisis`, and `frustrated but fine` through one labelled conversation-log selector; the separate `Live conversation` option has been removed.
 - Each scripted option renders all eleven turns from the same fixture used by Lite replay, preserves its exact state sequence and evidence tags, and expands the newest turn by default.
-- Switching a ledger fixture updates the microphone-rail count, workspace-tab count, elapsed time, and conversation-level decision without changing the live analysis charts.
-- Reset, recording, typing, and Play Demo return the ledger source to `Live conversation`.
+- Switching a ledger fixture updates the microphone-rail count, workspace-tab count, elapsed time, conversation-level decision, all three Live analysis charts, and the overall TTM probabilities.
+- The selected fixture is the live conversation. Recording and typing append to it without changing the selection; each fixture retains its own appended live turns when switching away and back.
+- In browser QA, `frustrated but fine` changed Live analysis from the gradual-drift `Escalate` state to `Continue`. A typed turn increased that source from 11 to 12 turns, appeared in its ledger, updated Live analysis, and remained present after switching to `calm crisis` and back.
 - A typed turn keeps `Assistant reply` empty while awaiting the first Luna delta. The user transcript appears only in the `User` column.
 - The exact reported transcript, `Why am I killing rabbit`, completed with a distinct Luna reply; the raw endpoint emitted incremental `assistant.delta` events containing that reply.
 - Exact and transcript-prefixed assistant echoes are suppressed during streaming, rejected on completion, and retried once through Luna.
