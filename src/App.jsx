@@ -814,7 +814,7 @@ export function App() {
   );
   const [isPlaying, setIsPlaying] = useState(false);
   const [showRubric, setShowRubric] = useState(false);
-  const [activeTab, setActiveTab] = useState("analysis");
+  const [activeTab, setActiveTab] = useState("ledger");
   const [ledgerSource, setLedgerSource] = useState(DEFAULT_LEDGER_SOURCE);
   const [liveRawTurnsBySource, setLiveRawTurnsBySource] = useState({});
   const [apiConfig, setApiConfig] = useState({

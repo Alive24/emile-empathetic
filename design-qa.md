@@ -39,7 +39,7 @@
 ## Interaction and browser evidence
 
 - `Lite replay` appears directly beside `Live analysis` and `Turn ledger`.
-- The workspace tab order is `Turn ledger`, `Live analysis`, then `Lite replay`; Live analysis remains the initial active view.
+- The workspace tab order is `Turn ledger`, `Live analysis`, then `Lite replay`; Turn ledger is the initial active view.
 - Opening replay exposes one `Return to ledger` button; using it returns to the selected Turn ledger tab.
 - The Turn ledger exposes only `gradual drift`, `calm crisis`, and `frustrated but fine` through one labelled conversation-log selector; the separate `Live conversation` option has been removed.
 - Each scripted option renders all eleven turns from the same fixture used by Lite replay, preserves its exact state sequence and evidence tags, and expands the newest turn by default.

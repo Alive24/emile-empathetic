@@ -10,7 +10,7 @@ Build app UI in `src/`. Keep `.openai/hosting.json`, `worker/index.js`, `scripts
 
 ## Active visual and product direction
 
-- Keep two first-class views without a global navigator: order the detailed workspace tabs as `Turn ledger`, `Live analysis`, then `Lite replay`, and provide a clear `Return to ledger` button inside replay.
+- Keep two first-class views without a global navigator: order the detailed workspace tabs as `Turn ledger`, `Live analysis`, then `Lite replay`; open `Turn ledger` by default; and provide a clear `Return to ledger` button inside replay.
 - Use the approved warm Emile visual language across both views: warm off-white background, clean sans-serif, flat paper-like cards, hairline borders, generous whitespace, and restrained semantic colour.
 - Preserve the detailed view's persistent microphone rail, Live analysis / Turn ledger tabs, Flint charts, recording, OpenAI inference, ElevenLabs transcription, and reply playback.
 - Stream only Luna's newly generated assistant reply into the provisional ledger row. Keep the assistant cell empty until Luna produces reply text; never place the user transcript or locally generated holding copy there. Reject and retry transcript echoes before completing a turn.
