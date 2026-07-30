@@ -9,6 +9,13 @@ import {
 
 const boundedScore = z.number().min(0).max(1);
 
+const StageProbabilities = z.object({
+  precontemplation: boundedScore,
+  contemplation: boundedScore,
+  preparation: boundedScore,
+  action: boundedScore,
+});
+
 const DirectHarm = z.object({
   present: z.boolean(),
   target: z.enum(["self", "person", "animal", "property", "unknown", "none"]),
@@ -32,6 +39,7 @@ const DirectHarm = z.object({
 const FeatureExtraction = z.object({
   ttmApplicable: z.boolean(),
   stagePosition: z.number().min(0).max(3),
+  stageProbabilities: StageProbabilities,
   stageConfidence: boundedScore,
   meaningfulness: boundedScore,
   offDomain: z.boolean(),
@@ -137,7 +145,9 @@ You are Emile's evidence-extraction layer for a non-clinical behavioural guardra
 
 Extract only observable evidence from the current user turn, relevant transcript history, and supplied metadata. Do not choose a routing state, write an assistant reply, score a reply, diagnose, or speculate about hidden mental states. Treat the user as a capable adult.
 
-TTM measures engagement with the practical medical-bill task only. If the current turn is off-task or contains possible direct harm, return ttmApplicable=false, offDomain=true, and retain the supplied previous stage position. Never map words such as “want”, “plan”, or “going to” to TTM when they concern harm.
+TTM measures engagement with the practical medical-bill task only. Return a probability for each of precontemplation, contemplation, preparation, and action. The four stageProbabilities must sum to 1. stagePosition is their expected ordinal value: 0×precontemplation + 1×contemplation + 2×preparation + 3×action. stageConfidence is the largest stage probability.
+
+If the current turn is off-task or contains possible direct harm, return ttmApplicable=false, offDomain=true, and retain the supplied previous stage probabilities and position. Never map words such as “want”, “plan”, or “going to” to TTM when they concern harm.
 
 Extract possible direct-harm content separately. Identify target, intent level, immediacy, repetition, increasing urgency, and whether language is clearly figurative. Do not lower direct-harm evidence because language is calm. Repetition is not a new spike but may be compounding evidence.
 
@@ -194,6 +204,7 @@ function safeHistory(history) {
     assistant: String(turn.assistant ?? "").slice(0, 1200),
     stage: String(turn.stage ?? ""),
     stagePosition: Number(turn.stagePosition),
+    stageProbabilities: turn.stageProbabilities ?? null,
     stageConfidence: Number(turn.stageConfidence) || 0.5,
     meaningfulness: Number(turn.meaningfulness) || 0.5,
     absolutist: Number(turn.absolutist) || 0,

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  makeBeliefSamples,
+  aggregateStageProbabilities,
+  normalizeStageProbabilities,
   scoreComb,
   scoreConversation,
   summarizeConversation,
@@ -160,12 +161,44 @@ test("conversation summary and belief samples remain bounded", () => {
   ]);
 
   const summary = summarizeConversation(turns);
-  const samples = makeBeliefSamples(turns);
+  const probabilities = aggregateStageProbabilities(turns);
 
   assert.equal(summary.stage, "Preparation");
-  assert.ok(samples.length >= 5);
-  assert.ok(samples.every((sample) => sample.stagePosition >= 0));
-  assert.ok(samples.every((sample) => sample.stagePosition <= 3));
+  assert.ok(
+    Math.abs(
+      Object.values(probabilities).reduce((total, value) => total + value, 0) -
+        1,
+    ) < 0.001,
+  );
+});
+
+test("TTM probabilities are normalized and drive the selected stage", () => {
+  const probabilities = normalizeStageProbabilities({
+    precontemplation: 1,
+    contemplation: 6,
+    preparation: 2,
+    action: 1,
+  });
+  const [turn] = scoreConversation([
+    {
+      id: "probability-turn",
+      user: "I am thinking about checking the bill.",
+      assistant: "Response",
+      stagePosition: 2.8,
+      stageProbabilities: probabilities,
+      stageConfidence: 0.4,
+      meaningfulness: 0.8,
+      absolutist: 0,
+      features: {},
+      appropriateness: 90,
+      evidence: [],
+      rationale: "",
+    },
+  ]);
+
+  assert.equal(turn.stage, "Contemplation");
+  assert.equal(turn.stageConfidence, 0.6);
+  assert.ok(Math.abs(turn.stagePosition - 1.3) < 0.001);
 });
 
 test("instant analysis creates a bounded provisional turn", () => {

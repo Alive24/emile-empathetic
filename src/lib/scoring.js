@@ -1,8 +1,8 @@
 export const TTM_STAGES = [
-  { name: "Precontemplation", position: 0 },
-  { name: "Contemplation", position: 1 },
-  { name: "Preparation", position: 2 },
-  { name: "Action", position: 3 },
+  { name: "Precontemplation", key: "precontemplation", position: 0 },
+  { name: "Contemplation", key: "contemplation", position: 1 },
+  { name: "Preparation", key: "preparation", position: 2 },
+  { name: "Action", key: "action", position: 3 },
 ];
 
 export const DECISION_ORDER = {
@@ -50,6 +50,63 @@ export function stageName(position) {
   );
 
   return stage.name;
+}
+
+export function normalizeStageProbabilities(
+  probabilities,
+  stagePosition = 0,
+  stageConfidence = 0.5,
+) {
+  const supplied = Object.fromEntries(
+    TTM_STAGES.map(({ key }) => [
+      key,
+      Math.max(0, Number(probabilities?.[key]) || 0),
+    ]),
+  );
+  const suppliedTotal = Object.values(supplied).reduce(
+    (total, value) => total + value,
+    0,
+  );
+
+  if (suppliedTotal > 0) {
+    return Object.fromEntries(
+      Object.entries(supplied).map(([key, value]) => [
+        key,
+        round(value / suppliedTotal, 4),
+      ]),
+    );
+  }
+
+  const position = clamp(stagePosition, 0, 3);
+  const spread = 0.28 + (1 - clamp(stageConfidence)) * 0.72;
+  const weights = TTM_STAGES.map(({ position: stage }) =>
+    Math.exp(-0.5 * ((stage - position) / spread) ** 2),
+  );
+  const total = weights.reduce((sum, value) => sum + value, 0);
+
+  return Object.fromEntries(
+    TTM_STAGES.map(({ key }, index) => [
+      key,
+      round(weights[index] / total, 4),
+    ]),
+  );
+}
+
+function probabilityPosition(probabilities) {
+  return TTM_STAGES.reduce(
+    (total, stage) =>
+      total + stage.position * (probabilities[stage.key] ?? 0),
+    0,
+  );
+}
+
+function mostLikelyStage(probabilities) {
+  return TTM_STAGES.reduce((highest, stage) =>
+    (probabilities[stage.key] ?? 0) >
+    (probabilities[highest.key] ?? 0)
+      ? stage
+      : highest,
+  ).name;
 }
 
 export function scoreComb(features = {}) {
@@ -135,9 +192,16 @@ export function scoreConversation(rawTurns) {
     };
     const comb = scoreComb(normalizedFeatures);
     const ttmApplicable = raw.ttmApplicable !== false;
-    const stagePosition = ttmApplicable
-      ? clamp(raw.stagePosition, 0, 3)
-      : previous?.stagePosition ?? clamp(raw.stagePosition, 0, 3);
+    const inferredStageProbabilities = normalizeStageProbabilities(
+      raw.stageProbabilities,
+      raw.stagePosition,
+      raw.stageConfidence,
+    );
+    const stageProbabilities = ttmApplicable
+      ? inferredStageProbabilities
+      : previous?.stageProbabilities ?? inferredStageProbabilities;
+    const stagePosition = probabilityPosition(stageProbabilities);
+    const stageConfidence = Math.max(...Object.values(stageProbabilities));
     const stageRegression = Boolean(
       ttmApplicable && previous && previous.stagePosition - stagePosition >= 0.6,
     );
@@ -210,7 +274,9 @@ export function scoreConversation(rawTurns) {
         : raw.assistant,
       ...comb,
       stagePosition,
-      stage: stageName(stagePosition),
+      stageProbabilities,
+      stageConfidence,
+      stage: mostLikelyStage(stageProbabilities),
       ttmApplicable,
       stageRegression,
       sustainedRegression,
@@ -246,7 +312,21 @@ export function summarizeConversation(turns) {
       0,
     ) / weightTotal;
 
-  const stagePosition = weightedAverage("stagePosition");
+  const stageProbabilities = Object.fromEntries(
+    TTM_STAGES.map(({ key }) => [
+      key,
+      round(
+        weighted.reduce(
+          (total, turn) =>
+            total +
+            (turn.stageProbabilities?.[key] ?? 0) * turn.aggregateWeight,
+          0,
+        ) / weightTotal,
+        4,
+      ),
+    ]),
+  );
+  const stagePosition = probabilityPosition(stageProbabilities);
   const latest = turns.at(-1);
   const highestDecision = turns.reduce((highest, turn) =>
     DECISION_ORDER[turn.decision] > DECISION_ORDER[highest.decision]
@@ -256,7 +336,8 @@ export function summarizeConversation(turns) {
 
   return {
     stagePosition: round(stagePosition),
-    stage: stageName(stagePosition),
+    stageProbabilities,
+    stage: mostLikelyStage(stageProbabilities),
     capability: round(weightedAverage("capability")),
     opportunity: round(weightedAverage("opportunity")),
     motivation: round(weightedAverage("motivation")),
@@ -269,25 +350,6 @@ export function summarizeConversation(turns) {
   };
 }
 
-export function makeBeliefSamples(turns) {
-  const offsets = [
-    -1.65, -1.35, -1.1, -0.9, -0.72, -0.55, -0.4, -0.27, -0.15, -0.05,
-    0.05, 0.15, 0.27, 0.4, 0.55, 0.72, 0.9, 1.1, 1.35, 1.65,
-  ];
-
-  return turns.flatMap((turn, turnIndex) => {
-    const sampleCount = Math.max(5, Math.round(turn.meaningfulness * 20));
-    const spread = 0.18 + (1 - turn.stageConfidence) * 0.6;
-    const start = Math.floor((offsets.length - sampleCount) / 2);
-    const chosenOffsets = offsets.slice(start, start + sampleCount);
-
-    return chosenOffsets.map((offset, sampleIndex) => ({
-      stagePosition: round(
-        clamp(turn.stagePosition + offset * spread, 0, 3),
-        3,
-      ),
-      sourceTurn: `Turn ${turnIndex + 1}`,
-      sample: sampleIndex + 1,
-    }));
-  });
+export function aggregateStageProbabilities(turns) {
+  return summarizeConversation(turns).stageProbabilities;
 }

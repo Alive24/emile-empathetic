@@ -70,6 +70,13 @@ const GAP_LABELS = {
   opportunity: "Timing",
 };
 
+const TTM_PROBABILITY_LABELS = [
+  ["precontemplation", "Precontemplation"],
+  ["contemplation", "Contemplation"],
+  ["preparation", "Preparation"],
+  ["action", "Action"],
+];
+
 const LEDGER_SOURCE_OPTIONS = [
   { id: "live", label: "Live conversation" },
   ...Object.values(REPLAY_SCENARIOS).map(({ id, label }) => ({
@@ -80,6 +87,31 @@ const LEDGER_SOURCE_OPTIONS = [
 
 function formatPercent(value) {
   return `${Math.round(value * 100)}%`;
+}
+
+function allocateStagePercentages(probabilities) {
+  const shares = TTM_PROBABILITY_LABELS.map(([key]) => {
+    const exact = (probabilities[key] ?? 0) * 100;
+    return { key, exact, whole: Math.floor(exact) };
+  });
+  let remaining =
+    100 - shares.reduce((total, share) => total + share.whole, 0);
+
+  shares
+    .toSorted(
+      (left, right) =>
+        right.exact - right.whole - (left.exact - left.whole),
+    )
+    .forEach((share) => {
+      if (remaining > 0) {
+        share.whole += 1;
+        remaining -= 1;
+      }
+    });
+
+  return Object.fromEntries(
+    shares.map(({ key, whole }) => [key, `${whole}%`]),
+  );
 }
 
 function MetricBar({ label, value, color, compact = false }) {
@@ -339,6 +371,9 @@ function TtmPanel({ turns }) {
   );
   const beliefSpec = useMemo(() => buildTtmBeliefSpec(turns), [turns]);
   const summary = summarizeConversation(turns);
+  const stagePercentages = allocateStagePercentages(
+    summary.stageProbabilities,
+  );
 
   return (
     <section className="analysis-panel ttm-panel">
@@ -367,18 +402,29 @@ function TtmPanel({ turns }) {
 
       <div className="chart-block chart-block--belief">
         <div className="chart-label">
-          <span>Overall model belief</span>
-          <span>Flint density plot</span>
+          <span>Overall stage probability</span>
+          <span>Flint probability curve</span>
         </div>
         <FlintChart
           spec={beliefSpec}
-          label="Approximate overall model belief distributed across the ordinal TTM stage axis."
+          label="Aggregated model probability across precontemplation, contemplation, preparation, and action."
         />
+        <div
+          className="ttm-probabilities"
+          aria-label="Overall TTM stage probabilities"
+        >
+          {TTM_PROBABILITY_LABELS.map(([key, label]) => (
+            <div key={key}>
+              <span>{label}</span>
+              <strong>{stagePercentages[key]}</strong>
+            </div>
+          ))}
+        </div>
       </div>
 
       <p className="chart-caveat">
         <Info size={14} weight="fill" />
-        Ordinal model-belief approximation, not a clinical probability.
+        Model classification probabilities, not a clinical assessment.
       </p>
     </section>
   );
@@ -576,6 +622,9 @@ function TurnLedger({
         {[...turns].reverse().map((turn) => {
           const index = turns.findIndex((candidate) => candidate.id === turn.id);
           const selected = turn.id === selectedId;
+          const turnStagePercentages = allocateStagePercentages(
+            turn.stageProbabilities,
+          );
           return (
             <article
               key={turn.id}
@@ -675,6 +724,21 @@ function TurnLedger({
                     <div>
                       <span>Behaviour sum</span>
                       <strong>{turn.behaviorScore.toFixed(2)}</strong>
+                    </div>
+
+                    <div className="turn-evidence__ttm">
+                      <span>TTM stage probabilities</span>
+                      <div
+                        className="ttm-probabilities ttm-probabilities--turn"
+                        aria-label={`Turn ${index + 1} TTM stage probabilities`}
+                      >
+                        {TTM_PROBABILITY_LABELS.map(([key, label]) => (
+                          <div key={key}>
+                            <span>{label}</span>
+                            <strong>{turnStagePercentages[key]}</strong>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
 
@@ -920,6 +984,7 @@ export function App() {
           assistant,
           stage,
           stagePosition,
+          stageProbabilities,
           stageConfidence,
           meaningfulness,
           absolutist,
@@ -933,6 +998,7 @@ export function App() {
           assistant,
           stage,
           stagePosition,
+          stageProbabilities,
           stageConfidence,
           meaningfulness,
           absolutist,

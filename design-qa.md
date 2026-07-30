@@ -10,6 +10,9 @@
 - Turn-ledger log switcher: `/private/tmp/emile-ledger-log-switcher.png`
 - Turn-ledger mobile switcher: `/private/tmp/emile-ledger-log-switcher-mobile.png`
 - Luna reply-stream fix: `/private/tmp/emile-luna-stream-fixed.png`
+- TTM overall probabilities: `/private/tmp/emile-ttm-probabilities-desktop.png`
+- TTM mobile probabilities: `/private/tmp/emile-ttm-probabilities-mobile.png`
+- TTM per-turn probabilities: `/private/tmp/emile-ttm-probabilities-ledger.png`
 - Source and replay pixels: 1024 × 1536 each, normalized at DPR 1.
 - Detailed viewport: 1440 × 1024 CSS px at DPR 1.
 - Mobile viewport: 390 × 844 CSS px at DPR 1.
@@ -41,6 +44,9 @@
 - A typed turn keeps `Assistant reply` empty while awaiting the first Luna delta. The user transcript appears only in the `User` column.
 - The exact reported transcript, `Why am I killing rabbit`, completed with a distinct Luna reply; the raw endpoint emitted incremental `assistant.delta` events containing that reply.
 - Exact and transcript-prefixed assistant echoes are suppressed during streaming, rejected on completion, and retried once through Luna.
+- The live TTM extractor returns four normalized stage probabilities. The overall panel and expanded ledger turn show all four percentages, allocated to display as exactly 100%.
+- The overall Flint probability curve and all three Flint charts render ready on desktop and mobile; the mobile layout has no horizontal overflow.
+- A live analyzed turn completed with probabilities of 17% precontemplation, 15% contemplation, 53% preparation, and 15% action.
 - A typed test turn showed its first model text delta at 0.97 seconds, four visible text updates, and the completed rubric at 3.3 seconds.
 - The provisional row remained selected and labelled `Streaming with Luna`; the Lite replay control stayed disabled until completion.
 - The three workspace tabs fit at 390 px with no horizontal overflow.
@@ -50,7 +56,7 @@
 
 ## Automated validation
 
-- `npm test`: passed, 12 tests.
+- `npm test`: passed, 13 tests.
 - `npm run build`: passed.
 - `npm run test:sites`: passed, 4 tests.
 - `git diff --check`: passed.

@@ -1,5 +1,8 @@
 import { assembleVegaLite } from "flint-chart";
-import { makeBeliefSamples } from "./scoring.js";
+import {
+  aggregateStageProbabilities,
+  TTM_STAGES,
+} from "./scoring.js";
 
 const chartTheme = {
   background: "transparent",
@@ -119,22 +122,34 @@ export function buildTtmObservationSpec(turns) {
     ],
     range: ["#d98270", "#d6a64e", "#82947e", "#6f9f9a"],
   };
+  finished.encoding.color.legend = null;
   return finished;
 }
 
 export function buildTtmBeliefSpec(turns) {
+  const probabilities = aggregateStageProbabilities(turns);
   const spec = assembleVegaLite({
-    data: { values: makeBeliefSamples(turns) },
+    data: {
+      values: TTM_STAGES.map((stage) => ({
+        stage: stage.name,
+        stagePosition: stage.position,
+        probability: probabilities[stage.key],
+      })),
+    },
     semantic_types: {
+      stage: "Category",
       stagePosition: "Quantity",
-      sourceTurn: "Category",
+      probability: "Rating",
     },
     chart_spec: {
-      chartType: "Density Plot",
-      encodings: { x: { field: "stagePosition" } },
+      chartType: "Area Chart",
+      encodings: {
+        x: { field: "stagePosition" },
+        y: { field: "probability" },
+      },
       baseSize: { width: 620, height: 120 },
       canvasSize: { width: 760, height: 150 },
-      chartProperties: { bandwidth: 0.18 },
+      chartProperties: { interpolate: "monotone", opacity: 0.22 },
     },
     options: {
       addTooltips: true,
@@ -147,22 +162,19 @@ export function buildTtmBeliefSpec(turns) {
   finished.encoding.x.axis = stageAxis();
   finished.encoding.x.scale = { domain: [-0.18, 3.18], nice: false };
   finished.encoding.y.axis = {
-    title: "Relative belief",
-    labels: false,
-    ticks: false,
-    domain: false,
-    grid: false,
+    title: "Probability",
+    format: ".0%",
+    tickCount: 3,
   };
+  finished.encoding.y.scale = { domain: [0, 1], nice: false };
   finished.mark = {
-    type:
-      typeof finished.mark === "string"
-        ? finished.mark
-        : finished.mark?.type ?? "area",
+    type: "area",
     ...(typeof finished.mark === "object" ? finished.mark : {}),
     fill: "#82947e",
-    fillOpacity: 0.16,
+    fillOpacity: 0.2,
     stroke: "#657b61",
     strokeWidth: 2,
+    interpolate: "monotone",
   };
   return finished;
 }

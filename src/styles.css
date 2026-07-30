@@ -575,6 +575,73 @@ button:focus-visible {
   border-top: 1px solid #222c38;
 }
 
+.ttm-probabilities {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+}
+
+.ttm-probabilities > div {
+  min-width: 0;
+  padding: 8px 10px;
+  border-right: 1px solid var(--border);
+}
+
+.ttm-probabilities > div:last-child {
+  border-right: 0;
+}
+
+.ttm-probabilities span,
+.ttm-probabilities strong {
+  display: block;
+}
+
+.ttm-probabilities span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ttm-probabilities strong {
+  margin-top: 2px;
+  color: var(--text);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.turn-evidence__ttm {
+  grid-column: 1 / -1;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.turn-evidence__ttm > span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--quiet);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.ttm-probabilities--turn {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 0;
+}
+
+.ttm-probabilities--turn > div:nth-child(2) {
+  border-right: 0;
+}
+
+.ttm-probabilities--turn > div:nth-child(-n + 2) {
+  border-bottom: 1px solid var(--border);
+}
+
 .chart-label {
   height: 22px;
   display: flex;
@@ -1418,5 +1485,17 @@ button:focus-visible {
     padding: 0 0 12px;
     border-right: 0;
     border-bottom: 1px solid #222c38;
+  }
+
+  .ttm-probabilities {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ttm-probabilities > div:nth-child(2) {
+    border-right: 0;
+  }
+
+  .ttm-probabilities > div:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--border);
   }
 }

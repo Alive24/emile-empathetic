@@ -19,6 +19,7 @@ Build app UI in `src/`. Keep `.openai/hosting.json`, `worker/index.js`, `scripts
 - In Lite replay, fill the trajectory strip left-to-right as turns appear and automatically scroll to the page bottom after each new turn.
 - Treat the prototype as a model-measurement demonstration, not a clinical or production product.
 - Every visible turn must show TTM classification, COM-B gaps, assistant-response appropriateness, and the resulting four-state decision.
+- TTM must expose normalized probabilities for all four stages—not only a scalar position. Show the four percentages both in the overall TTM panel and in each expanded Turn ledger entry; derive the ordinal position and winning stage from that distribution.
 - Use Microsoft Flint for the TTM observation, TTM belief-distribution, and COM-B trajectory charts.
 - Opportunity gap may be displayed at full scale but must not drive escalation by itself.
 
