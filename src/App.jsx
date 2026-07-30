@@ -1,25 +1,31 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowClockwise,
+  ChartLineUp,
   CaretDown,
   CaretUp,
+  CircleNotch,
   Info,
+  ListBullets,
   Microphone,
+  PaperPlaneTilt,
   Pause,
   Play,
   ShieldCheck,
   SkipForward,
+  SpeakerHigh,
   Stop,
   Waveform,
 } from "@phosphor-icons/react";
 import { FlintChart } from "./components/FlintChart";
 import { DEMO_TURNS } from "./data/demoTurns";
+import { useTurnRecorder } from "./hooks/useTurnRecorder";
 import {
   buildCombSpec,
   buildTtmBeliefSpec,
   buildTtmObservationSpec,
 } from "./lib/flintSpecs";
-import { summarizeConversation } from "./lib/scoring";
+import { scoreConversation, summarizeConversation } from "./lib/scoring";
 import "./styles.css";
 
 const DECISION_COPY = {
@@ -68,12 +74,14 @@ function MetricBar({ label, value, color, compact = false }) {
   );
 }
 
-function MicRail({ active, onToggle, turnCount, elapsed }) {
+function MicRail({ active, busy, onToggle, turnCount, elapsed }) {
+  const status = busy ? "Analyzing" : active ? "Recording" : "Mic ready";
+
   return (
     <aside className="mic-rail" aria-label="Voice input">
       <div className="mic-rail__status">
         <span className={`live-dot ${active ? "live-dot--active" : ""}`} />
-        {active ? "Mic live" : "Mic paused"}
+        {status}
       </div>
       <time className="mic-rail__time">{elapsed}</time>
 
@@ -81,13 +89,16 @@ function MicRail({ active, onToggle, turnCount, elapsed }) {
         className={`mic-button ${active ? "mic-button--active" : ""}`}
         type="button"
         onClick={onToggle}
-        aria-label={active ? "Pause simulated microphone" : "Start microphone"}
+        aria-label={active ? "Stop and analyze recording" : "Start recording"}
         aria-pressed={active}
+        disabled={busy}
       >
-        {active ? (
+        {busy ? (
+          <CircleNotch className="spin" size={28} weight="bold" />
+        ) : active ? (
           <Microphone size={30} weight="fill" />
         ) : (
-          <Stop size={25} weight="fill" />
+          <Microphone size={28} weight="regular" />
         )}
       </button>
 
@@ -104,11 +115,101 @@ function MicRail({ active, onToggle, turnCount, elapsed }) {
       </div>
 
       <p className="mic-rail__note">
-        Behavioural inference,
+        Tap to record,
         <br />
-        not diagnosis
+        tap again to analyze
       </p>
     </aside>
+  );
+}
+
+function AppTabs({ activeTab, turnCount, onChange, apiConfig }) {
+  return (
+    <div className="workspace-nav">
+      <div className="app-tabs" role="tablist" aria-label="Workspace views">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "analysis"}
+          className={activeTab === "analysis" ? "is-active" : ""}
+          onClick={() => onChange("analysis")}
+        >
+          <ChartLineUp size={17} weight="bold" />
+          Live analysis
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "ledger"}
+          className={activeTab === "ledger" ? "is-active" : ""}
+          onClick={() => onChange("ledger")}
+        >
+          <ListBullets size={17} weight="bold" />
+          Turn ledger
+          <span>{turnCount}</span>
+        </button>
+      </div>
+
+      <div
+        className={`api-status ${
+          apiConfig.configured ? "api-status--ready" : ""
+        }`}
+      >
+        <span />
+        {apiConfig.loading
+          ? "Checking OpenAI"
+          : apiConfig.configured
+            ? apiConfig.elevenLabsConfigured
+              ? "Voice + analysis ready"
+              : "Analysis ready"
+            : "API key needed"}
+      </div>
+    </div>
+  );
+}
+
+function AnalysisComposer({
+  value,
+  onChange,
+  onSubmit,
+  disabled,
+  configured,
+}) {
+  return (
+    <form
+      className="analysis-composer"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit();
+      }}
+    >
+      <label htmlFor="typed-turn">Quick text fallback</label>
+      <div>
+        <input
+          id="typed-turn"
+          type="text"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={
+            configured
+              ? "Type a turn if browser speech recognition is unavailable…"
+              : "OpenAI connection required"
+          }
+          disabled={!configured || disabled}
+        />
+        <button
+          type="submit"
+          disabled={!configured || disabled || !value.trim()}
+        >
+          {disabled ? (
+            <CircleNotch className="spin" size={16} weight="bold" />
+          ) : (
+            <PaperPlaneTilt size={16} weight="fill" />
+          )}
+          Analyze
+        </button>
+      </div>
+    </form>
   );
 }
 
@@ -377,7 +478,13 @@ function CompactGaps({ turn }) {
   );
 }
 
-function TurnLedger({ turns, selectedId, onSelect }) {
+function TurnLedger({
+  turns,
+  selectedId,
+  onSelect,
+  onSpeak,
+  speakingId,
+}) {
   return (
     <section className="ledger-section">
       <div className="section-heading">
@@ -427,6 +534,19 @@ function TurnLedger({ turns, selectedId, onSelect }) {
               <div className="turn-row__assistant">
                 <span className="column-label">Assistant reply</span>
                 <p>{turn.assistant}</p>
+                <button
+                  className="listen-button"
+                  type="button"
+                  onClick={() => onSpeak(turn)}
+                  disabled={!onSpeak}
+                >
+                  {speakingId === turn.id ? (
+                    <Stop size={13} weight="fill" />
+                  ) : (
+                    <SpeakerHigh size={13} weight="fill" />
+                  )}
+                  {speakingId === turn.id ? "Stop" : "Listen"}
+                </button>
               </div>
 
               <div className="turn-row__fit">
@@ -506,15 +626,68 @@ function TurnLedger({ turns, selectedId, onSelect }) {
 export function App() {
   const [visibleCount, setVisibleCount] = useState(4);
   const [selectedId, setSelectedId] = useState(DEMO_TURNS[3].id);
-  const [micActive, setMicActive] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const [showRubric, setShowRubric] = useState(false);
+  const [activeTab, setActiveTab] = useState("analysis");
+  const [liveRawTurns, setLiveRawTurns] = useState([]);
+  const [apiConfig, setApiConfig] = useState({
+    loading: true,
+    configured: false,
+  });
+  const [analysisStatus, setAnalysisStatus] = useState({
+    state: "idle",
+    message: "Record a new turn when you are ready.",
+  });
+  const [draftTranscript, setDraftTranscript] = useState("");
+  const [speakingId, setSpeakingId] = useState(null);
+  const audioRef = useRef(null);
+  const audioUrlRef = useRef(null);
+  const { isRecording, start: startRecording, stop: stopRecording } =
+    useTurnRecorder();
 
-  const turns = DEMO_TURNS.slice(0, visibleCount);
+  const turns = useMemo(
+    () =>
+      scoreConversation([
+        ...DEMO_TURNS.slice(0, visibleCount),
+        ...liveRawTurns,
+      ]),
+    [liveRawTurns, visibleCount],
+  );
   const latestTurn = turns.at(-1);
   const selectedTurn =
     turns.find((turn) => turn.id === selectedId) ?? latestTurn;
   const summary = summarizeConversation(turns);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch("/api/config")
+      .then((response) => response.json())
+      .then((config) => {
+        if (!cancelled) {
+          setApiConfig({ loading: false, ...config });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setApiConfig({ loading: false, configured: false });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(
+    () => () => {
+      audioRef.current?.pause();
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!isPlaying) {
@@ -539,6 +712,7 @@ export function App() {
   const handleNext = () => {
     if (visibleCount >= DEMO_TURNS.length) {
       setVisibleCount(1);
+      setLiveRawTurns([]);
       setSelectedId(DEMO_TURNS[0].id);
       setIsPlaying(false);
       return;
@@ -550,17 +724,199 @@ export function App() {
   };
 
   const handleReset = () => {
+    audioRef.current?.pause();
+    setSpeakingId(null);
     setVisibleCount(1);
+    setLiveRawTurns([]);
     setSelectedId(DEMO_TURNS[0].id);
     setIsPlaying(false);
-    setMicActive(true);
+    setAnalysisStatus({
+      state: "idle",
+      message: "Record a new turn when you are ready.",
+    });
+  };
+
+  const submitTurn = async ({ transcript = "", blob, durationMs = 0 }) => {
+    const startedAt = performance.now();
+    setAnalysisStatus({
+      state: "analyzing",
+      message: "Applying the TTM + COM-B rubric…",
+    });
+    const formData = new FormData();
+    if (transcript.trim()) {
+      formData.append("transcript", transcript.trim());
+    }
+    if (blob) {
+      formData.append(
+        "audio",
+        blob,
+        blob.type.includes("mp4") ? "turn.m4a" : "turn.webm",
+      );
+    }
+    formData.append(
+      "history",
+      JSON.stringify(
+        turns.map(({ user, assistant, stage, decision }) => ({
+          user,
+          assistant,
+          stage,
+          decision,
+        })),
+      ),
+    );
+    formData.append("durationMs", String(durationMs));
+
+    const response = await fetch("/api/analyze", {
+      method: "POST",
+      body: formData,
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "The turn could not be analyzed.");
+    }
+
+    const priorSeconds = latestTurn.timestamp
+      .split(":")
+      .reduce((total, part) => total * 60 + Number(part), 0);
+    const nextSeconds =
+      priorSeconds + Math.max(8, Math.round(durationMs / 1000) + 4);
+    const nextTimestamp = [
+      Math.floor(nextSeconds / 3600),
+      Math.floor((nextSeconds % 3600) / 60),
+      nextSeconds % 60,
+    ]
+      .map((value) => String(value).padStart(2, "0"))
+      .join(":");
+    const id = `live-${Date.now()}`;
+    const rawTurn = {
+      id,
+      timestamp: nextTimestamp,
+      user: payload.transcript,
+      assistant: payload.analysis.assistant,
+      ...payload.analysis,
+      responseRubric: {
+        tone: payload.analysis.appropriateness,
+        informationLoad: payload.analysis.appropriateness,
+        safety: payload.analysis.appropriateness,
+      },
+    };
+
+    setLiveRawTurns((current) => [...current, rawTurn]);
+    setSelectedId(id);
+    setDraftTranscript("");
+    setAnalysisStatus({
+      state: "success",
+      message: `Turn analyzed in ${(
+        (performance.now() - startedAt) /
+        1000
+      ).toFixed(1)}s · ${payload.models.analysis}.`,
+    });
+  };
+
+  const handleMicToggle = async () => {
+    if (analysisStatus.state === "analyzing") {
+      return;
+    }
+
+    if (!isRecording) {
+      if (!apiConfig.configured) {
+        setAnalysisStatus({
+          state: "error",
+          message:
+            "Add OPENAI_API_KEY to .env.local, then restart the preview.",
+        });
+        return;
+      }
+
+      try {
+        await startRecording();
+        setAnalysisStatus({
+          state: "recording",
+          message: "Recording… tap the microphone again when you finish.",
+        });
+      } catch (error) {
+        setAnalysisStatus({
+          state: "error",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Microphone permission was not granted.",
+        });
+      }
+      return;
+    }
+
+    try {
+      setAnalysisStatus({
+        state: "analyzing",
+        message: "Finishing the transcript…",
+      });
+      const recording = await stopRecording();
+      await submitTurn(recording);
+    } catch (error) {
+      setAnalysisStatus({
+        state: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "The recording could not be analyzed.",
+      });
+    }
+  };
+
+  const handleSpeak = async (turn) => {
+    if (speakingId === turn.id) {
+      audioRef.current?.pause();
+      setSpeakingId(null);
+      return;
+    }
+
+    audioRef.current?.pause();
+    setSpeakingId(turn.id);
+
+    try {
+      const response = await fetch("/api/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: turn.assistant }),
+      });
+      if (!response.ok) {
+        const payload = await response.json();
+        throw new Error(payload.error || "The reply could not be read aloud.");
+      }
+
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+      }
+      const audioUrl = URL.createObjectURL(await response.blob());
+      const audio = new Audio(audioUrl);
+      audioRef.current = audio;
+      audioUrlRef.current = audioUrl;
+      audio.addEventListener("ended", () => setSpeakingId(null), {
+        once: true,
+      });
+      audio.addEventListener("error", () => setSpeakingId(null), {
+        once: true,
+      });
+      await audio.play();
+    } catch (error) {
+      setSpeakingId(null);
+      setAnalysisStatus({
+        state: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "The reply could not be read aloud.",
+      });
+    }
   };
 
   return (
     <div className="app-shell">
       <MicRail
-        active={micActive}
-        onToggle={() => setMicActive((active) => !active)}
+        active={isRecording}
+        busy={analysisStatus.state === "analyzing"}
+        onToggle={handleMicToggle}
         turnCount={turns.length}
         elapsed={latestTurn.timestamp}
       />
@@ -577,23 +933,68 @@ export function App() {
           canAdvance={visibleCount < DEMO_TURNS.length}
         />
 
-        <div className="analysis-grid">
-          <TtmPanel turns={turns} />
-          <CombPanel
-            turns={turns}
-            selectedTurn={selectedTurn}
-            showRubric={showRubric}
-            onToggleRubric={() => setShowRubric((shown) => !shown)}
-          />
+        <AppTabs
+          activeTab={activeTab}
+          turnCount={turns.length}
+          onChange={setActiveTab}
+          apiConfig={apiConfig}
+        />
+
+        <div
+          className={`analysis-status analysis-status--${analysisStatus.state}`}
+          role="status"
+        >
+          {analysisStatus.state === "analyzing" && (
+            <CircleNotch className="spin" size={16} weight="bold" />
+          )}
+          <span>{analysisStatus.message}</span>
         </div>
 
-        <DecisionStrip decision={latestTurn.decision} />
-
-        <TurnLedger
-          turns={turns}
-          selectedId={selectedTurn.id}
-          onSelect={setSelectedId}
+        <AnalysisComposer
+          value={draftTranscript}
+          onChange={setDraftTranscript}
+          configured={apiConfig.configured}
+          disabled={analysisStatus.state === "analyzing" || isRecording}
+          onSubmit={async () => {
+            try {
+              await submitTurn({ transcript: draftTranscript });
+            } catch (error) {
+              setAnalysisStatus({
+                state: "error",
+                message:
+                  error instanceof Error
+                    ? error.message
+                    : "The turn could not be analyzed.",
+              });
+            }
+          }}
         />
+
+        {activeTab === "analysis" ? (
+          <>
+            <div className="analysis-grid">
+              <TtmPanel turns={turns} />
+              <CombPanel
+                turns={turns}
+                selectedTurn={selectedTurn}
+                showRubric={showRubric}
+                onToggleRubric={() => setShowRubric((shown) => !shown)}
+              />
+            </div>
+
+            <DecisionStrip decision={latestTurn.decision} />
+          </>
+        ) : (
+          <TurnLedger
+            turns={turns}
+            selectedId={selectedTurn.id}
+            onSelect={setSelectedId}
+            onSpeak={
+              apiConfig.elevenLabsConfigured ? handleSpeak : undefined
+            }
+            speakingId={speakingId}
+          />
+        )}
       </main>
     </div>
   );
