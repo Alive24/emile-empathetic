@@ -818,6 +818,45 @@ button:focus-visible {
   font-size: 10px;
 }
 
+.ledger-heading-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+}
+
+.ledger-heading-controls > span {
+  padding-bottom: 7px;
+  color: var(--quiet);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.ledger-source-switcher {
+  display: grid;
+  gap: 4px;
+}
+
+.ledger-source-switcher > span {
+  color: var(--quiet);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.ledger-source-switcher select {
+  min-width: 176px;
+  height: 30px;
+  padding: 0 28px 0 10px;
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  background: var(--surface);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
 .ledger {
   display: grid;
   gap: 8px;
@@ -1301,6 +1340,27 @@ button:focus-visible {
   .analysis-composer {
     grid-template-columns: 1fr;
     gap: 6px;
+  }
+
+  .section-heading {
+    min-height: 0;
+    flex-direction: column;
+    margin-bottom: 12px;
+  }
+
+  .ledger-heading-controls {
+    width: 100%;
+    align-items: flex-end;
+    justify-content: space-between;
+  }
+
+  .ledger-source-switcher {
+    flex: 1;
+  }
+
+  .ledger-source-switcher select {
+    width: 100%;
+    min-width: 0;
   }
 
   .panel-heading {

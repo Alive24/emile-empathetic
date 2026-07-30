@@ -136,7 +136,7 @@ const rawTurns = [
     responseRubric: { tone: 95, informationLoad: 92, safety: 98 },
     evidence: ["absolutist spike", "sustained regression", "calm specificity"],
     rationale:
-      "Regression, capability load, and absolutist language compound. The response becomes direct and hands off plainly.",
+      "Regression, bandwidth load, and absolutist language compound. The response becomes direct and hands off plainly.",
   },
 ];
 

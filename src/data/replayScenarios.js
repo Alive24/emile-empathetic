@@ -45,7 +45,7 @@ export const REPLAY_SCENARIOS = {
         "There are five calls and I cannot tell which one matters.",
         "Would it help to pause the calls and only sort the paperwork first, or make one call with the bill in front of you?",
         "Checkpoint",
-        ["capability gap", "bill exposure"],
+        ["bandwidth gap", "bill exposure"],
       ],
       [
         "It does not matter. I am done with all of this.",
@@ -57,7 +57,7 @@ export const REPLAY_SCENARIOS = {
         "I cannot keep doing this tonight.",
         "Please step away from the bill and reach out to a person who can be with you. If there is immediate danger, contact local emergency support.",
         "Escalate",
-        ["high capability gap", "sustained decline"],
+        ["high bandwidth gap", "sustained decline"],
       ],
       [
         "Okay.",
@@ -105,7 +105,7 @@ export const REPLAY_SCENARIOS = {
         "I already moved the money. I need this over.",
         "This is moving beyond what this tool can safely help with. Please ask a trusted person to be with you before you take another step with the payment.",
         "Escalate",
-        ["sustained regression", "high capability gap"],
+        ["sustained regression", "high bandwidth gap"],
       ],
       [
         "I do not need help. I just need it done.",
@@ -117,7 +117,7 @@ export const REPLAY_SCENARIOS = {
         "I am sitting in the parking lot outside the bank.",
         "Please call or text someone who can come to you or stay on the phone. If there is immediate danger, contact local emergency support.",
         "Escalate",
-        ["immediate context", "high capability gap"],
+        ["immediate context", "high bandwidth gap"],
       ],
       [
         "Okay.",
@@ -195,7 +195,7 @@ export const REPLAY_SCENARIOS = {
         "I have the EOB from February. Is that the right one?",
         "Use the EOB with the same date of service as the bill. If the dates differ, keep both for comparison.",
         "Continue",
-        ["specific question", "task capability"],
+        ["specific question", "task bandwidth"],
       ],
       [
         "Got it. I found the matching date.",
@@ -219,8 +219,103 @@ export const REPLAY_SCENARIOS = {
         "That works.",
         "When you have the records, you can decide what question to ask next.",
         "Continue",
-        ["stable stage", "task capability"],
+        ["stable stage", "task bandwidth"],
       ],
     ]),
   },
 };
+
+const STATE_ANALYSIS = {
+  Continue: {
+    stagePosition: 2.45,
+    capability: 0.08,
+    motivation: 0.06,
+    meaningfulness: 0.56,
+    appropriateness: 92,
+  },
+  Soften: {
+    stagePosition: 1.75,
+    capability: 0.38,
+    motivation: 0.32,
+    meaningfulness: 0.72,
+    appropriateness: 88,
+  },
+  Checkpoint: {
+    stagePosition: 0.95,
+    capability: 0.66,
+    motivation: 0.52,
+    meaningfulness: 0.9,
+    appropriateness: 91,
+  },
+  Escalate: {
+    stagePosition: 0.2,
+    capability: 0.84,
+    motivation: 0.72,
+    meaningfulness: 0.98,
+    appropriateness: 94,
+  },
+};
+
+const formatTimestamp = (turnIndex) => {
+  const seconds = 24 + turnIndex * 37;
+  return [
+    Math.floor(seconds / 3600),
+    Math.floor((seconds % 3600) / 60),
+    seconds % 60,
+  ]
+    .map((value) => String(value).padStart(2, "0"))
+    .join(":");
+};
+
+export function replayScenarioToRawTurns(scenarioId) {
+  const scenario = REPLAY_SCENARIOS[scenarioId];
+  if (!scenario) {
+    return [];
+  }
+
+  return scenario.turns.map((turn, index) => {
+    const profile = STATE_ANALYSIS[turn.state];
+    const hasMinimalAcknowledgment = turn.signals.some((signal) =>
+      /minimal acknowledgment/i.test(signal),
+    );
+    const hasAbsolutistSignal = turn.signals.some((signal) =>
+      /absolutist|sustained regression|sustained decline/i.test(signal),
+    );
+    const opportunity =
+      turn.signals.some((signal) => /immediate context/i.test(signal)) ? 0.3 : 0.06;
+    const responseRubric = {
+      tone: profile.appropriateness,
+      informationLoad: profile.appropriateness,
+      safety: profile.appropriateness,
+    };
+
+    return {
+      id: `replay-${scenarioId}-${index + 1}`,
+      timestamp: formatTimestamp(index),
+      user: turn.user,
+      assistant: turn.emile,
+      stagePosition: profile.stagePosition,
+      stageConfidence: Math.min(0.95, 0.76 + index * 0.018),
+      meaningfulness: profile.meaningfulness,
+      absolutist: hasAbsolutistSignal ? 0.88 : 0.08,
+      features: {
+        messageLengthDrop: profile.capability,
+        tenseCollapse: profile.capability,
+        speechRateDrop: profile.capability * 0.7,
+        pauseRatioElevated: profile.capability * 0.8,
+        cantTalkLong: 0,
+        lateNight: opportunity,
+        interruptionMentioned: 0,
+        minimalAcknowledgment: hasMinimalAcknowledgment
+          ? 0.9
+          : profile.motivation,
+        monopitch: profile.motivation * 0.8,
+      },
+      appropriateness: profile.appropriateness,
+      responseRubric,
+      evidence: turn.signals,
+      rationale: `${turn.state} is pre-scripted for the ${scenario.label} adversarial log. The ledger exposes the same evidence used by Lite replay.`,
+      fixedDecision: turn.state,
+    };
+  });
+}

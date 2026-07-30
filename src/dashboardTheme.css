@@ -203,6 +203,17 @@ select:focus-visible {
   color: #9a9f97;
 }
 
+.ledger-source-switcher select {
+  border-color: #c9c1b4;
+  color: #343934;
+  background: #fffefa;
+}
+
+.ledger-source-switcher select:hover,
+.ledger-source-switcher select:focus {
+  border-color: #8da187;
+}
+
 .analysis-composer button {
   border-color: #9caf99;
   color: #29402a;

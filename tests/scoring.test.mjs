@@ -8,6 +8,14 @@ import {
 } from "../src/lib/scoring.js";
 import { buildInstantTurn } from "../src/lib/instantAnalysis.js";
 import { extractStreamedAssistant } from "../server/openaiAnalysis.mjs";
+import {
+  isAssistantEcho,
+  isPotentialAssistantEcho,
+} from "../src/lib/assistantReply.js";
+import {
+  REPLAY_SCENARIOS,
+  replayScenarioToRawTurns,
+} from "../src/data/replayScenarios.js";
 
 test("COM-B formulas preserve the requested coefficients", () => {
   const result = scoreComb({
@@ -186,6 +194,28 @@ test("instant analysis recognizes an absolutist regression signal", () => {
 
   assert.ok(turn.absolutist >= 0.65);
   assert.ok(turn.stagePosition < 2.4);
+  assert.equal(turn.assistant, "");
+});
+
+test("assistant reply guards reject transcript echoes without blocking replies", () => {
+  const transcript = "Why am I killing rabbit";
+
+  assert.equal(isAssistantEcho(transcript, transcript), true);
+  assert.equal(
+    isAssistantEcho(`${transcript}. Can you explain?`, transcript),
+    true,
+  );
+  assert.equal(
+    isPotentialAssistantEcho("Why am I kill", transcript),
+    true,
+  );
+  assert.equal(
+    isPotentialAssistantEcho(
+      "I am not sure what you mean by rabbit. What happened?",
+      transcript,
+    ),
+    false,
+  );
 });
 
 test("generated checkpoint replies cannot become diagnostic questions", () => {
@@ -323,4 +353,18 @@ test("crying alone does not become a checkpoint without a calculated gap", () =>
   ]);
 
   assert.equal(turn.decision, "Continue");
+});
+
+test("all Lite replay logs can drive the scored turn ledger", () => {
+  for (const scenario of Object.values(REPLAY_SCENARIOS)) {
+    const rawTurns = replayScenarioToRawTurns(scenario.id);
+    const scoredTurns = scoreConversation(rawTurns);
+
+    assert.equal(scoredTurns.length, 11);
+    assert.deepEqual(
+      scoredTurns.map((turn) => turn.decision),
+      scenario.turns.map((turn) => turn.state),
+    );
+    assert.ok(scoredTurns.every((turn) => turn.evidence.length >= 1));
+  }
 });

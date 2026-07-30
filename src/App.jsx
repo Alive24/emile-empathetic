@@ -20,6 +20,10 @@ import {
 import { FlintChart } from "./components/FlintChart";
 import { LiteReplay } from "./components/LiteReplay";
 import { DEMO_TURNS } from "./data/demoTurns";
+import {
+  REPLAY_SCENARIOS,
+  replayScenarioToRawTurns,
+} from "./data/replayScenarios";
 import { useTurnRecorder } from "./hooks/useTurnRecorder";
 import {
   buildCombSpec,
@@ -27,6 +31,10 @@ import {
   buildTtmObservationSpec,
 } from "./lib/flintSpecs";
 import { buildInstantTurn } from "./lib/instantAnalysis";
+import {
+  isAssistantEcho,
+  isPotentialAssistantEcho,
+} from "./lib/assistantReply";
 import { scoreConversation, summarizeConversation } from "./lib/scoring";
 import "./styles.css";
 import "./dashboardTheme.css";
@@ -34,10 +42,10 @@ import "./dashboardTheme.css";
 const DECISION_COPY = {
   Continue: {
     trigger: "Stable stage · low gaps",
-    behavior: "Normal flow, full task capability",
+    behavior: "Normal flow, full task bandwidth",
   },
   Soften: {
-    trigger: "Mild capability or motivation gap",
+    trigger: "Mild bandwidth or engagement gap",
     behavior: "Shorter response, slower pacing, no new information",
   },
   Checkpoint: {
@@ -55,6 +63,20 @@ const GAP_COLORS = {
   motivation: "#d6a64e",
   opportunity: "#a385bd",
 };
+
+const GAP_LABELS = {
+  capability: "Bandwidth",
+  motivation: "Engagement",
+  opportunity: "Timing",
+};
+
+const LEDGER_SOURCE_OPTIONS = [
+  { id: "live", label: "Live conversation" },
+  ...Object.values(REPLAY_SCENARIOS).map(({ id, label }) => ({
+    id,
+    label,
+  })),
+];
 
 function formatPercent(value) {
   return `${Math.round(value * 100)}%`;
@@ -397,25 +419,28 @@ function CombPanel({ turns, selectedTurn, showRubric, onToggleRubric }) {
         </div>
         <FlintChart
           spec={combSpec}
-          label="Stacked capability, motivation, and opportunity gaps for each turn, with a line showing the total behavior score."
+          label="Stacked bandwidth, engagement, and timing gaps for each turn, with a line showing the total behavior score."
         />
       </div>
 
-      <div className="gap-legend" aria-label="COM-B gap values">
+      <div
+        className="gap-legend"
+        aria-label="Bandwidth, engagement, and timing gap values"
+      >
         {["capability", "motivation", "opportunity"].map((gap) => (
           <div key={gap}>
             <span
               className="legend-swatch"
               style={{ background: GAP_COLORS[gap] }}
             />
-            <span>{gap}</span>
+            <span>{GAP_LABELS[gap]}</span>
             <strong>{selectedTurn[gap].toFixed(2)}</strong>
           </div>
         ))}
         <div className="gap-legend__risk">
           <span>Decision risk</span>
           <strong>{selectedTurn.decisionRisk.toFixed(2)}</strong>
-          <small>45% C · 45% M · 10% O</small>
+          <small>45% B · 45% E · 10% T</small>
         </div>
       </div>
 
@@ -436,17 +461,17 @@ function CombPanel({ turns, selectedTurn, showRubric, onToggleRubric }) {
       {showRubric && (
         <div className="formula-list">
           <FormulaRow
-            formula="C = .3 length + .3 tense + .2 speech + .2 pause"
+            formula="B = .3 length + .3 tense + .2 speech + .2 pause"
             value={selectedTurn.capability.toFixed(2)}
             color={GAP_COLORS.capability}
           />
           <FormulaRow
-            formula="O = .5 time limit + .3 late night + .2 interruption"
+            formula="T = .5 time limit + .3 late night + .2 interruption"
             value={selectedTurn.opportunity.toFixed(2)}
             color={GAP_COLORS.opportunity}
           />
           <FormulaRow
-            formula="M = .4 minimal ack + .3 no question + .3 monopitch"
+            formula="E = .4 minimal ack + .3 no question + .3 monopitch"
             value={selectedTurn.motivation.toFixed(2)}
             color={GAP_COLORS.motivation}
           />
@@ -489,17 +514,39 @@ function DecisionStrip({ decision }) {
 
 function CompactGaps({ turn }) {
   return (
-    <div className="compact-gaps" aria-label="COM-B gap scores">
+    <div
+      className="compact-gaps"
+      aria-label="Bandwidth, engagement, and timing gap scores"
+    >
       <span style={{ color: GAP_COLORS.capability }}>
-        C {turn.capability.toFixed(2)}
+        B {turn.capability.toFixed(2)}
       </span>
       <span style={{ color: GAP_COLORS.motivation }}>
-        M {turn.motivation.toFixed(2)}
+        E {turn.motivation.toFixed(2)}
       </span>
       <span style={{ color: GAP_COLORS.opportunity }}>
-        O {turn.opportunity.toFixed(2)}
+        T {turn.opportunity.toFixed(2)}
       </span>
     </div>
+  );
+}
+
+function LedgerSourceSwitcher({ value, onChange }) {
+  return (
+    <label className="ledger-source-switcher">
+      <span>Conversation log</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        aria-label="Conversation log"
+      >
+        {LEDGER_SOURCE_OPTIONS.map((option) => (
+          <option key={option.id} value={option.id}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
@@ -507,6 +554,8 @@ function TurnLedger({
   turns,
   selectedId,
   onSelect,
+  source,
+  onSourceChange,
   onSpeak,
   speakingId,
 }) {
@@ -517,7 +566,10 @@ function TurnLedger({
           <h2>Turn ledger</h2>
           <p>Conversation, inferred state, response fit, and routing decision.</p>
         </div>
-        <span>Newest evidence first · {turns.length} turns</span>
+        <div className="ledger-heading-controls">
+          <LedgerSourceSwitcher value={source} onChange={onSourceChange} />
+          <span>Newest evidence first · {turns.length} turns</span>
+        </div>
       </div>
 
       <div className="ledger">
@@ -628,19 +680,19 @@ function TurnLedger({
 
                   <div className="turn-evidence__gaps">
                     <MetricBar
-                      label="Capability"
+                      label="Bandwidth"
                       value={turn.capability}
                       color={GAP_COLORS.capability}
                       compact
                     />
                     <MetricBar
-                      label="Motivation"
+                      label="Engagement"
                       value={turn.motivation}
                       color={GAP_COLORS.motivation}
                       compact
                     />
                     <MetricBar
-                      label="Opportunity"
+                      label="Timing"
                       value={turn.opportunity}
                       color={GAP_COLORS.opportunity}
                       compact
@@ -689,6 +741,7 @@ export function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [showRubric, setShowRubric] = useState(false);
   const [activeTab, setActiveTab] = useState("analysis");
+  const [ledgerSource, setLedgerSource] = useState("live");
   const [liveRawTurns, setLiveRawTurns] = useState([]);
   const [apiConfig, setApiConfig] = useState({
     loading: true,
@@ -713,10 +766,21 @@ export function App() {
       ]),
     [liveRawTurns, visibleCount],
   );
+  const ledgerTurns = useMemo(
+    () =>
+      ledgerSource === "live"
+        ? turns
+        : scoreConversation(replayScenarioToRawTurns(ledgerSource)),
+    [ledgerSource, turns],
+  );
   const latestTurn = turns.at(-1);
   const selectedTurn =
     turns.find((turn) => turn.id === selectedId) ?? latestTurn;
   const summary = summarizeConversation(turns);
+  const displayedTurns = activeTab === "ledger" ? ledgerTurns : turns;
+  const displayedLatestTurn = displayedTurns.at(-1);
+  const displayedSummary =
+    activeTab === "ledger" ? summarizeConversation(ledgerTurns) : summary;
   const analysisBusy = analysisStatus.state === "analyzing";
 
   useEffect(() => {
@@ -771,6 +835,7 @@ export function App() {
   }, [isPlaying]);
 
   const handleNext = () => {
+    setLedgerSource("live");
     if (visibleCount >= DEMO_TURNS.length) {
       setVisibleCount(1);
       setLiveRawTurns([]);
@@ -785,6 +850,7 @@ export function App() {
   };
 
   const handleReset = () => {
+    setLedgerSource("live");
     audioRef.current?.pause();
     setSpeakingId(null);
     setVisibleCount(1);
@@ -798,6 +864,7 @@ export function App() {
   };
 
   const submitTurn = async ({ transcript = "", blob, durationMs = 0 }) => {
+    setLedgerSource("live");
     const startedAt = performance.now();
     const priorSeconds = latestTurn.timestamp
       .split(":")
@@ -895,9 +962,11 @@ export function App() {
     const decoder = new TextDecoder();
     let streamBuffer = "";
     let payload = null;
+    let resolvedUserText = transcript.trim();
 
     const handleStreamEvent = (event) => {
       if (event.type === "transcript" && !hasInstantPreview) {
+        resolvedUserText = event.transcript;
         const previewTurn = buildInstantTurn({
           id,
           timestamp: nextTimestamp,
@@ -916,6 +985,9 @@ export function App() {
           message: "Transcript ready · Luna is streaming the reply…",
         });
       } else if (event.type === "assistant.delta") {
+        if (isPotentialAssistantEcho(event.assistant, resolvedUserText)) {
+          return;
+        }
         setLiveRawTurns((current) =>
           current.map((turn) =>
             turn.id === id
@@ -955,6 +1027,14 @@ export function App() {
     if (!payload) {
       throw new Error("The analysis stream ended before returning a result.");
     }
+    if (
+      isAssistantEcho(
+        payload.analysis.assistant,
+        payload.transcript || resolvedUserText,
+      )
+    ) {
+      throw new Error("Luna returned the user transcript instead of a reply.");
+    }
 
     const rawTurn = {
       id,
@@ -988,6 +1068,7 @@ export function App() {
     }
 
     if (!isRecording) {
+      setLedgerSource("live");
       if (!apiConfig.configured) {
         setAnalysisStatus({
           state: "error",
@@ -1086,17 +1167,20 @@ export function App() {
         active={isRecording}
         busy={analysisBusy}
         onToggle={handleMicToggle}
-        turnCount={turns.length}
-        elapsed={latestTurn.timestamp}
+        turnCount={displayedTurns.length}
+        elapsed={displayedLatestTurn.timestamp}
       />
 
       <main className="app-main">
         <Header
-          summary={summary}
-          firstTurn={turns[0]}
-          latestTurn={latestTurn}
+          summary={displayedSummary}
+          firstTurn={displayedTurns[0]}
+          latestTurn={displayedLatestTurn}
           isPlaying={isPlaying}
-          onPlay={() => setIsPlaying((playing) => !playing)}
+          onPlay={() => {
+            setLedgerSource("live");
+            setIsPlaying((playing) => !playing);
+          }}
           onNext={handleNext}
           onReset={handleReset}
           canAdvance={visibleCount < DEMO_TURNS.length}
@@ -1104,7 +1188,7 @@ export function App() {
 
         <AppTabs
           activeTab={activeTab}
-          turnCount={turns.length}
+          turnCount={displayedTurns.length}
           onChange={setActiveTab}
           onOpenReplay={() => setPrototypeView("replay")}
           replayDisabled={isRecording || analysisBusy}
@@ -1157,9 +1241,15 @@ export function App() {
           </>
         ) : (
           <TurnLedger
-            turns={turns}
-            selectedId={selectedTurn.id}
+            turns={ledgerTurns}
+            selectedId={
+              ledgerTurns.some((turn) => turn.id === selectedId)
+                ? selectedId
+                : ledgerTurns.at(-1).id
+            }
             onSelect={setSelectedId}
+            source={ledgerSource}
+            onSourceChange={setLedgerSource}
             onSpeak={
               apiConfig.elevenLabsConfigured ? handleSpeak : undefined
             }

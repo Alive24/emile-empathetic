@@ -199,6 +199,10 @@ export function scoreConversation(rawTurns) {
       decision = "Soften";
     }
 
+    if (raw.fixedDecision in DECISION_ORDER) {
+      decision = raw.fixedDecision;
+    }
+
     scored.push({
       ...raw,
       assistant: raw.guardGeneratedReply

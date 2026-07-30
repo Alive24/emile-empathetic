@@ -2,6 +2,10 @@ import OpenAI, { toFile } from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import { scoreConversation } from "../src/lib/scoring.js";
+import {
+  isAssistantEcho,
+  isPotentialAssistantEcho,
+} from "../src/lib/assistantReply.js";
 
 const boundedScore = z.number().min(0).max(1);
 
@@ -51,7 +55,13 @@ const FeatureExtraction = z.object({
 });
 
 const GeneratedResponse = z.object({
-  assistant: z.string().min(1).max(800),
+  assistant: z
+    .string()
+    .min(1)
+    .max(800)
+    .describe(
+      "Luna's new reply to the user. Never copy, quote, or return the user's transcript.",
+    ),
 });
 
 // Retained for the NDJSON preview client, which can display a final response as
@@ -142,6 +152,8 @@ const RESPONSE_PROMPT = `
 You write Emile's response. The supplied routing state is authoritative. Do not change, reinterpret, mention, or explain it. Do not mention TTM, COM-B, scores, features, or internal rules.
 
 Use plain American English and treat the user as a capable adult. No therapeutic filler or feeling-summary preamble. Ask at most one question. Use 120 words maximum, preferably fewer than 45. Never give legal, financial, tax, or medical advice, and never say whether the user personally owes a deceased person's debt.
+The assistant field must contain Luna's new reply to the current user turn. Never
+copy, quote, paraphrase, or return the current user turn as the assistant reply.
 
 Continue: answer the practical question and offer one concrete next step. No unsolicited emotional commentary.
 Soften: give one piece of information in short sentences, add no new information load, and prefer one optional next step over a question.
@@ -149,6 +161,17 @@ Checkpoint: stop task assistance. Ask one plain, non-diagnostic choice about con
 Escalate: stop task mode. Say directly this is beyond what the tool can safely help with. Give immediate concrete steps to create distance from the potential target and any means of harm, and involve a trusted person or appropriate local emergency or animal-control service now. Use four sentences or fewer.
 
 If direct harm is ambiguous under Checkpoint, offer a concrete choice to step away, pause, or involve someone trusted. If Escalate has repeated, immediate, or action-oriented direct harm, use direct safety language. Return JSON only matching the supplied schema.
+`.trim();
+
+const REPLY_RETRY_PROMPT = `
+You are Luna, the assistant reply layer in a non-clinical behavioural guardrail
+demo. Write only the next assistant reply. Do not return JSON, a label, analysis,
+or the user's words.
+
+Use plain American English and no therapeutic filler. Keep the reply under 45
+words and ask at most one question. Respond to ambiguous language with one
+neutral, non-leading clarification or offer a pause. Never copy, quote,
+paraphrase, or begin with the current user turn.
 `.trim();
 
 const EVALUATION_PROMPT = `
@@ -198,6 +221,129 @@ async function parseResponse({ client, model, reasoningEffort, prompt, input, sc
     throw new Error(`${name} did not return a structured result.`);
   }
   return response.output_parsed;
+}
+
+async function generateResponse({
+  client,
+  model,
+  reasoningEffort,
+  input,
+  transcript,
+  onAssistantDelta,
+}) {
+  if (!onAssistantDelta) {
+    return parseResponse({
+      client,
+      model,
+      reasoningEffort,
+      prompt: RESPONSE_PROMPT,
+      input,
+      schema: GeneratedResponse,
+      name: "state_based_response",
+      maxOutputTokens: 500,
+    });
+  }
+
+  const stream = client.responses.stream({
+    model,
+    reasoning: { effort: reasoningEffort },
+    max_output_tokens: 500,
+    input: [
+      { role: "system", content: RESPONSE_PROMPT },
+      { role: "user", content: JSON.stringify(input) },
+    ],
+    text: {
+      format: zodTextFormat(GeneratedResponse, "state_based_response"),
+    },
+  });
+  let streamedText = "";
+  let streamedAssistant = "";
+
+  for await (const event of stream) {
+    if (event.type !== "response.output_text.delta") {
+      continue;
+    }
+
+    streamedText += event.delta;
+    const nextAssistant = extractStreamedAssistant(streamedText);
+    if (isPotentialAssistantEcho(nextAssistant, transcript)) {
+      continue;
+    }
+    if (nextAssistant.length > streamedAssistant.length) {
+      onAssistantDelta(
+        nextAssistant.slice(streamedAssistant.length),
+        nextAssistant,
+      );
+      streamedAssistant = nextAssistant;
+    }
+  }
+
+  const response = await stream.finalResponse();
+  if (!response.output_parsed) {
+    throw new Error("state_based_response did not return a structured result.");
+  }
+  return response.output_parsed;
+}
+
+async function regenerateEchoedAssistant({
+  client,
+  model,
+  reasoningEffort,
+  transcript,
+  history,
+  routingState,
+  directHarm,
+  onAssistantDelta,
+}) {
+  const request = {
+    model,
+    reasoning: { effort: reasoningEffort },
+    max_output_tokens: 120,
+    input: [
+      { role: "system", content: REPLY_RETRY_PROMPT },
+      {
+        role: "user",
+        content: JSON.stringify({
+          conversationHistory: safeHistory(history),
+          currentUserTurn: transcript,
+          routingState,
+          directHarm,
+          task: "Write Luna's new reply to the current user turn.",
+        }),
+      },
+    ],
+  };
+
+  if (!onAssistantDelta) {
+    const retry = await client.responses.create(request);
+    return retry.output_text?.trim() || "";
+  }
+
+  const stream = client.responses.stream(request);
+  let streamedText = "";
+  let emittedAssistant = "";
+
+  for await (const event of stream) {
+    if (event.type !== "response.output_text.delta") {
+      continue;
+    }
+
+    streamedText += event.delta;
+    const nextAssistant = streamedText.trimStart();
+    if (isPotentialAssistantEcho(nextAssistant, transcript)) {
+      continue;
+    }
+    if (nextAssistant.length > emittedAssistant.length) {
+      onAssistantDelta(
+        nextAssistant.slice(emittedAssistant.length),
+        nextAssistant,
+      );
+      emittedAssistant = nextAssistant;
+    }
+  }
+
+  const retry = await stream.finalResponse();
+  return retry.output_text?.trim() || streamedText.trim();
 }
 
 export function isOpenAIConfigured(apiKey = process.env.OPENAI_API_KEY) {
@@ -295,10 +441,31 @@ export async function analyzeTranscript({
     directHarm: extraction.directHarm,
     practicalContext: "Settling medical bills after someone close has died in the US.",
   };
-  const generated = await parseResponse({
-    client, model: analysisModel, reasoningEffort, prompt: RESPONSE_PROMPT,
-    input: responseInput, schema: GeneratedResponse, name: "state_based_response", maxOutputTokens: 500,
+  let generated = await generateResponse({
+    client,
+    model: analysisModel,
+    reasoningEffort,
+    input: responseInput,
+    transcript: transcript.trim(),
+    onAssistantDelta,
   });
+  if (isAssistantEcho(generated.assistant, transcript)) {
+    const assistant = await regenerateEchoedAssistant({
+      client,
+      model: analysisModel,
+      reasoningEffort,
+      transcript: transcript.trim(),
+      history: conversationHistory,
+      routingState: authoritativeTurn.decision,
+      directHarm: extraction.directHarm,
+      onAssistantDelta,
+    });
+
+    if (!assistant || isAssistantEcho(assistant, transcript)) {
+      throw new Error("Luna did not return a distinct assistant reply.");
+    }
+    generated = { assistant };
+  }
   const evaluation = await parseResponse({
     client, model: analysisModel, reasoningEffort, prompt: EVALUATION_PROMPT,
     input: {
@@ -307,8 +474,6 @@ export async function analyzeTranscript({
     },
     schema: ResponseEvaluation, name: "independent_response_evaluation", maxOutputTokens: 650,
   });
-  onAssistantDelta?.(generated.assistant, generated.assistant);
-
   return {
     transcript: transcript.trim(),
     analysis: {

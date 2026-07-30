@@ -70,12 +70,6 @@ export function buildInstantTurn({
     0,
     3,
   );
-  const capabilityEstimate =
-    0.3 * messageLengthDrop + 0.3 * tenseCollapse;
-  const assistant =
-    absolutist >= 0.65 || capabilityEstimate >= 0.3
-      ? "Would you like to keep going with one small step, or pause and come back to this?"
-      : "";
   const evidence = ["instant text pass"];
 
   if (messageLengthDrop >= 0.35) {
@@ -92,7 +86,7 @@ export function buildInstantTurn({
     id,
     timestamp,
     user,
-    assistant,
+    assistant: "",
     stagePosition,
     stageConfidence: 0.46,
     meaningfulness: clamp(0.35 + words.length / 50 + absolutist * 0.25),

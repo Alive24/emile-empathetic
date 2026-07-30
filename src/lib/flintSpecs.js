@@ -171,17 +171,17 @@ export function buildCombSpec(turns) {
   const gapRows = turns.flatMap((turn, index) => [
     {
       turn: index + 1,
-      gap: "Capability",
+      gap: "Bandwidth",
       score: turn.capability,
     },
     {
       turn: index + 1,
-      gap: "Motivation",
+      gap: "Engagement",
       score: turn.motivation,
     },
     {
       turn: index + 1,
-      gap: "Opportunity",
+      gap: "Timing",
       score: turn.opportunity,
     },
   ]);
@@ -269,7 +269,7 @@ export function buildCombSpec(turns) {
       color: {
         ...areaSpec.encoding.color,
         scale: {
-          domain: ["Capability", "Motivation", "Opportunity"],
+          domain: ["Bandwidth", "Engagement", "Timing"],
           range: ["#6f9f9a", "#d6a64e", "#a385bd"],
         },
       },

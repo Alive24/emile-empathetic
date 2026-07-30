@@ -1,4 +1,4 @@
-# Design QA — Emile integrated navigation and streaming
+# Design QA — Emile shared conversation logs
 
 ## Visual truth and evidence
 
@@ -7,6 +7,9 @@
 - Lite replay implementation: `/private/tmp/emile-replay-return.png`
 - Mobile implementation: `/private/tmp/emile-mobile-tabs.png`
 - Full-view comparison: `/private/tmp/emile-return-reference-comparison.png`
+- Turn-ledger log switcher: `/private/tmp/emile-ledger-log-switcher.png`
+- Turn-ledger mobile switcher: `/private/tmp/emile-ledger-log-switcher-mobile.png`
+- Luna reply-stream fix: `/private/tmp/emile-luna-stream-fixed.png`
 - Source and replay pixels: 1024 × 1536 each, normalized at DPR 1.
 - Detailed viewport: 1440 × 1024 CSS px at DPR 1.
 - Mobile viewport: 390 × 844 CSS px at DPR 1.
@@ -31,6 +34,13 @@
 
 - `Lite replay` appears directly beside `Live analysis` and `Turn ledger`.
 - Opening replay exposes one `Return to ledger` button; using it returns to the selected Turn ledger tab.
+- The Turn ledger exposes `Live conversation`, `gradual drift`, `calm crisis`, and `frustrated but fine` through one labelled conversation-log selector.
+- Each scripted option renders all eleven turns from the same fixture used by Lite replay, preserves its exact state sequence and evidence tags, and expands the newest turn by default.
+- Switching a ledger fixture updates the microphone-rail count, workspace-tab count, elapsed time, and conversation-level decision without changing the live analysis charts.
+- Reset, recording, typing, and Play Demo return the ledger source to `Live conversation`.
+- A typed turn keeps `Assistant reply` empty while awaiting the first Luna delta. The user transcript appears only in the `User` column.
+- The exact reported transcript, `Why am I killing rabbit`, completed with a distinct Luna reply; the raw endpoint emitted incremental `assistant.delta` events containing that reply.
+- Exact and transcript-prefixed assistant echoes are suppressed during streaming, rejected on completion, and retried once through Luna.
 - A typed test turn showed its first model text delta at 0.97 seconds, four visible text updates, and the completed rubric at 3.3 seconds.
 - The provisional row remained selected and labelled `Streaming with Luna`; the Lite replay control stayed disabled until completion.
 - The three workspace tabs fit at 390 px with no horizontal overflow.
@@ -40,7 +50,7 @@
 
 ## Automated validation
 
-- `npm test`: passed, 8 tests.
+- `npm test`: passed, 12 tests.
 - `npm run build`: passed.
 - `npm run test:sites`: passed, 4 tests.
 - `git diff --check`: passed.

@@ -13,8 +13,9 @@ Build app UI in `src/`. Keep `.openai/hosting.json`, `worker/index.js`, `scripts
 - Keep two first-class views without a global navigator: place `Lite replay` beside `Live analysis` and `Turn ledger`, and provide a clear `Return to ledger` button inside replay.
 - Use the approved warm Emile visual language across both views: warm off-white background, clean sans-serif, flat paper-like cards, hairline borders, generous whitespace, and restrained semantic colour.
 - Preserve the detailed view's persistent microphone rail, Live analysis / Turn ledger tabs, Flint charts, recording, OpenAI inference, ElevenLabs transcription, and reply playback.
-- Stream the model-generated assistant reply into the provisional ledger row. Never substitute canned holding copy while analysis is running.
+- Stream only Luna's newly generated assistant reply into the provisional ledger row. Keep the assistant cell empty until Luna produces reply text; never place the user transcript or locally generated holding copy there. Reject and retry transcript echoes before completing a turn.
 - Keep the replay view front-end-only with scripted scenarios, one turn revealed per click, state bars, and an eleven-step trajectory strip.
+- Use the three Lite replay scenarios as shared conversation fixtures for the Turn ledger. Keep a `Conversation log` switcher in the ledger with `Live conversation` as the default, and preserve each scripted scenario's messages, evidence tags, and four-state sequence.
 - In Lite replay, fill the trajectory strip left-to-right as turns appear and automatically scroll to the page bottom after each new turn.
 - Treat the prototype as a model-measurement demonstration, not a clinical or production product.
 - Every visible turn must show TTM classification, COM-B gaps, assistant-response appropriateness, and the resulting four-state decision.
@@ -43,6 +44,7 @@ Use [Emile master build flow · MD](https://docs.google.com/document/d/1B93qEevx
   - `Checkpoint`: stage regression, any gap at or above `0.60`, any gap at or above `0.45` during the `billExposure` window, or an absolutist spike of at least two terms after two clean turns.
   - `Escalate`: compounding evidence only—regression with capability at or above `0.60`; sustained absolutist ratio above `0.05`; tense collapse with a sustained capability gap; or, in voice mode, monopitch plus high pause ratio plus capability at or above `0.60`.
 - Escalation must never be triggered by one keyword or by opportunity alone.
+- A clear first-person statement of imminent intent to harm a person or animal is a narrow safety override and routes directly to `Escalate` without requiring a sustained trajectory. Do not apply this override to idioms, quotations, hypotheticals, fictional content, or ambiguous phrases; the displayed reply must agree with the final routing state.
 - The observability UI must expose extracted features, all three COM-B gaps, TTM stage, trajectory flags, `billExposure`, and the resulting state. Showing the reasoning is a core demo requirement.
 - State behavior:
   - `Continue`: answer the practical question normally and offer a concrete next step without unsolicited emotional commentary.
