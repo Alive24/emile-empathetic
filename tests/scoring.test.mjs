@@ -6,6 +6,8 @@ import {
   scoreConversation,
   summarizeConversation,
 } from "../src/lib/scoring.js";
+import { buildInstantTurn } from "../src/lib/instantAnalysis.js";
+import { extractStreamedAssistant } from "../server/openaiAnalysis.mjs";
 
 test("COM-B formulas preserve the requested coefficients", () => {
   const result = scoreComb({
@@ -158,3 +160,80 @@ test("conversation summary and belief samples remain bounded", () => {
   assert.ok(samples.every((sample) => sample.stagePosition <= 3));
 });
 
+test("instant analysis creates a bounded provisional turn", () => {
+  const turn = buildInstantTurn({
+    id: "preview",
+    timestamp: "00:00:10",
+    transcript: "I can continue, but keep this short.",
+    previousTurns: [],
+  });
+
+  assert.equal(turn.provisional, true);
+  assert.ok(turn.stagePosition >= 0 && turn.stagePosition <= 3);
+  assert.ok(turn.meaningfulness >= 0 && turn.meaningfulness <= 1);
+  assert.equal(turn.features.cantTalkLong, 1);
+  assert.equal(turn.assistant, "");
+  assert.equal(turn.streamingAssistant, true);
+});
+
+test("instant analysis recognizes an absolutist regression signal", () => {
+  const turn = buildInstantTurn({
+    id: "preview-risk",
+    timestamp: "00:00:20",
+    transcript: "There is no point. I am done with all of this.",
+    previousTurns: [{ user: "What comes next?", stagePosition: 2.4 }],
+  });
+
+  assert.ok(turn.absolutist >= 0.65);
+  assert.ok(turn.stagePosition < 2.4);
+});
+
+test("generated checkpoint replies cannot become diagnostic questions", () => {
+  const turns = scoreConversation([
+    {
+      id: "guardrail-check",
+      user: "There is no point. I am done with all of this.",
+      assistant:
+        "Are you safe right now, or are you thinking about hurting yourself?",
+      stagePosition: 0.2,
+      stageConfidence: 0.9,
+      meaningfulness: 0.9,
+      absolutist: 0.9,
+      features: {
+        messageLengthDrop: 0,
+        tenseCollapse: 0,
+        speechRateDrop: 0,
+        pauseRatioElevated: 0,
+        cantTalkLong: 0,
+        lateNight: 0,
+        interruptionMentioned: 0,
+        minimalAcknowledgment: 0,
+        monopitch: 0,
+      },
+      appropriateness: 90,
+      responseRubric: { tone: 90, informationLoad: 90, safety: 90 },
+      evidence: [],
+      rationale: "",
+      guardGeneratedReply: true,
+    },
+  ]);
+
+  assert.equal(turns[0].decision, "Checkpoint");
+  assert.doesNotMatch(turns[0].assistant, /safe|hurting yourself/i);
+  assert.match(turns[0].assistant, /keep going|pause/i);
+});
+
+test("streamed structured output exposes partial assistant text", () => {
+  assert.equal(
+    extractStreamedAssistant(
+      '{"assistant":"Keep going with one small step, or pause',
+    ),
+    "Keep going with one small step, or pause",
+  );
+  assert.equal(
+    extractStreamedAssistant(
+      '{"assistant":"A quoted \\"choice\\" and a new\\nline","stagePosition":',
+    ),
+    'A quoted "choice" and a new\nline',
+  );
+});

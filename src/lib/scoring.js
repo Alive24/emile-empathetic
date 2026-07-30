@@ -20,6 +20,24 @@ const round = (value, precision = 2) => {
   return Math.round(value * factor) / factor;
 };
 
+const DIAGNOSTIC_CHECK_PATTERN =
+  /\b(?:are you safe|hurting yourself|hurt yourself|suicid(?:e|al)|self[- ]harm)\b/i;
+
+function guardGeneratedAssistant(decision, assistant) {
+  if (
+    decision === "Checkpoint" &&
+    DIAGNOSTIC_CHECK_PATTERN.test(assistant)
+  ) {
+    return "Do you want to keep going with one small step, pause and come back to this, or involve someone you trust?";
+  }
+
+  if (decision === "Escalate") {
+    return "This seems like more than I can help with. Please contact someone you trust or local emergency support now. I’ll stop the bill task here.";
+  }
+
+  return assistant;
+}
+
 export function stageName(position) {
   const stage = TTM_STAGES.reduce((nearest, candidate) =>
     Math.abs(candidate.position - position) <
@@ -111,6 +129,9 @@ export function scoreConversation(rawTurns) {
 
     scored.push({
       ...raw,
+      assistant: raw.guardGeneratedReply
+        ? guardGeneratedAssistant(decision, raw.assistant)
+        : raw.assistant,
       ...comb,
       stage: stageName(raw.stagePosition),
       stageRegression,

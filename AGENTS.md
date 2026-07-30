@@ -10,8 +10,12 @@ Build app UI in `src/`. Keep `.openai/hosting.json`, `worker/index.js`, `scripts
 
 ## Active visual and product direction
 
-- Use the dark “Rubric Ledger” observability concept as the visual source of truth.
-- Keep a persistent microphone rail on the left and a dense chronological turn ledger.
+- Keep two first-class views without a global navigator: place `Lite replay` beside `Live analysis` and `Turn ledger`, and provide a clear `Return to ledger` button inside replay.
+- Use the approved warm Emile visual language across both views: warm off-white background, clean sans-serif, flat paper-like cards, hairline borders, generous whitespace, and restrained semantic colour.
+- Preserve the detailed view's persistent microphone rail, Live analysis / Turn ledger tabs, Flint charts, recording, OpenAI inference, ElevenLabs transcription, and reply playback.
+- Stream the model-generated assistant reply into the provisional ledger row. Never substitute canned holding copy while analysis is running.
+- Keep the replay view front-end-only with scripted scenarios, one turn revealed per click, state bars, and an eleven-step trajectory strip.
+- In Lite replay, fill the trajectory strip left-to-right as turns appear and automatically scroll to the page bottom after each new turn.
 - Treat the prototype as a model-measurement demonstration, not a clinical or production product.
 - Every visible turn must show TTM classification, COM-B gaps, assistant-response appropriateness, and the resulting four-state decision.
 - Use Microsoft Flint for the TTM observation, TTM belief-distribution, and COM-B trajectory charts.

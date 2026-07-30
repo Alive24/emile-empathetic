@@ -5,21 +5,21 @@ const chartTheme = {
   background: "transparent",
   view: { stroke: null },
   axis: {
-    domainColor: "#344052",
-    gridColor: "#26303d",
+    domainColor: "#bbb5aa",
+    gridColor: "#e5e0d7",
     gridOpacity: 0.7,
-    labelColor: "#9da9b8",
-    labelFont: "Inter, ui-sans-serif, system-ui",
+    labelColor: "#72786f",
+    labelFont: "DM Sans, ui-sans-serif, system-ui",
     labelFontSize: 11,
-    tickColor: "#344052",
-    titleColor: "#c8d0dc",
-    titleFont: "Inter, ui-sans-serif, system-ui",
+    tickColor: "#bbb5aa",
+    titleColor: "#515850",
+    titleFont: "DM Sans, ui-sans-serif, system-ui",
     titleFontSize: 11,
     titleFontWeight: 500,
   },
   legend: {
-    labelColor: "#b8c1ce",
-    labelFont: "Inter, ui-sans-serif, system-ui",
+    labelColor: "#626960",
+    labelFont: "DM Sans, ui-sans-serif, system-ui",
     labelFontSize: 11,
     symbolStrokeWidth: 2,
     title: null,
@@ -117,7 +117,7 @@ export function buildTtmObservationSpec(turns) {
       "Preparation",
       "Action",
     ],
-    range: ["#ff6f61", "#f5b64d", "#6475ff", "#36c4b2"],
+    range: ["#d98270", "#d6a64e", "#82947e", "#6f9f9a"],
   };
   return finished;
 }
@@ -159,9 +159,9 @@ export function buildTtmBeliefSpec(turns) {
         ? finished.mark
         : finished.mark?.type ?? "area",
     ...(typeof finished.mark === "object" ? finished.mark : {}),
-    fill: "#6475ff",
+    fill: "#82947e",
     fillOpacity: 0.16,
-    stroke: "#7f8cff",
+    stroke: "#657b61",
     strokeWidth: 2,
   };
   return finished;
@@ -270,7 +270,7 @@ export function buildCombSpec(turns) {
         ...areaSpec.encoding.color,
         scale: {
           domain: ["Capability", "Motivation", "Opportunity"],
-          range: ["#39bdd2", "#f5b64d", "#9b7bf7"],
+          range: ["#6f9f9a", "#d6a64e", "#a385bd"],
         },
       },
     },
@@ -280,9 +280,9 @@ export function buildCombSpec(turns) {
     data: lineSpec.data,
     mark: {
       type: "line",
-      color: "#f5f7fb",
+      color: "#343934",
       strokeWidth: 2.2,
-      point: { filled: true, fill: "#0d1219", stroke: "#f5f7fb", size: 50 },
+      point: { filled: true, fill: "#fffefa", stroke: "#343934", size: 50 },
     },
     encoding: {
       ...lineSpec.encoding,

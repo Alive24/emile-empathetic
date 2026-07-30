@@ -19,7 +19,7 @@ export function FlintChart({ spec, label, className = "" }) {
       vegaEmbed(hostRef.current, spec, {
         actions: false,
         renderer: "svg",
-        tooltip: { theme: "dark" },
+        tooltip: { theme: "light" },
       })
         .then((nextResult) => {
           if (!mounted) {

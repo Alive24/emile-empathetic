@@ -1,0 +1,326 @@
+.replay-app {
+  position: relative;
+  width: min(100% - 40px, 720px);
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 48px 0 36px;
+  color: #242922;
+}
+
+.replay-return {
+  position: absolute;
+  top: 48px;
+  left: 0;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid #c9c5bc;
+  color: #596058;
+  background: #fffefa;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+}
+
+.replay-return:hover {
+  background: #f2efe9;
+}
+
+.replay-header {
+  text-align: center;
+}
+
+.replay-header h1 {
+  margin: 0;
+  font-size: clamp(42px, 7vw, 64px);
+  font-weight: 500;
+  letter-spacing: -0.06em;
+  line-height: 0.96;
+}
+
+.replay-header p {
+  margin: 12px 0 0;
+  color: #626961;
+  font-size: 19px;
+  letter-spacing: -0.025em;
+}
+
+.conversation {
+  padding: 76px 0 188px;
+}
+
+.conversation h2 {
+  margin: 0 0 32px;
+  text-align: center;
+  font-size: 27px;
+  font-weight: 500;
+  letter-spacing: -0.035em;
+}
+
+.conversation-empty {
+  margin: 0;
+  padding: 42px 24px;
+  border: 1px solid #e3ded5;
+  color: #747a73;
+  background: #f7f5f1;
+  text-align: center;
+  font-size: 16px;
+}
+
+.replay-turn {
+  display: grid;
+  gap: 22px;
+  margin: 0 0 40px;
+  animation: turn-in 260ms ease-out both;
+}
+
+.message {
+  font-size: clamp(18px, 2.5vw, 23px);
+  line-height: 1.45;
+  letter-spacing: -0.027em;
+}
+
+.message--user {
+  padding: 24px;
+  background: #efefed;
+}
+
+.message--emile {
+  width: calc(100% - 168px);
+  margin-left: auto;
+  padding: 24px 27px;
+  border: 1px solid #bcbdb8;
+  background: #fffefa;
+}
+
+.state-bar {
+  min-height: 52px;
+  padding: 0 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  font-size: 17px;
+  color: #354236;
+}
+
+.state-signals {
+  display: flex;
+  justify-content: flex-end;
+  gap: 17px;
+  color: inherit;
+}
+
+.state-signals small {
+  font-size: 15px;
+  font-weight: 400;
+}
+
+.state-bar--Continue,
+.trajectory-block--Continue {
+  background: #dfe9d7;
+}
+
+.state-bar--Soften,
+.trajectory-block--Soften {
+  color: #815812;
+  background: #fee5aa;
+}
+
+.state-bar--Checkpoint,
+.trajectory-block--Checkpoint {
+  color: #97473d;
+  background: #ffc9b8;
+}
+
+.state-bar--Escalate,
+.trajectory-block--Escalate {
+  color: #8e3838;
+  background: #f4aaaa;
+}
+
+.replay-footer {
+  position: sticky;
+  bottom: 0;
+  margin: 0 -2px;
+  padding: 22px 2px 0;
+  border-top: 1px solid #d8d4cc;
+  background: #fbf9f5;
+}
+
+.replay-controls {
+  display: grid;
+  grid-template-columns: 1fr minmax(180px, 1.15fr) 1fr;
+  align-items: center;
+  gap: 18px;
+}
+
+.button,
+.scenario-picker select {
+  min-height: 50px;
+  border: 1px solid #8f938c;
+  border-radius: 0;
+  color: #343934;
+  background: #fffefa;
+  cursor: pointer;
+  font-size: 17px;
+}
+
+.button {
+  padding: 0 18px;
+}
+
+.button:hover,
+.scenario-picker select:hover {
+  background: #f4f2ec;
+}
+
+.scenario-picker select {
+  width: 100%;
+  padding: 0 10px;
+  border-color: transparent;
+  background: transparent;
+  text-align: center;
+  text-align-last: center;
+}
+
+.trajectory {
+  margin-top: 22px;
+}
+
+.trajectory p {
+  margin: 0 0 10px;
+  color: #5d655d;
+  font-size: 13px;
+  text-align: center;
+}
+
+.trajectory-blocks,
+.trajectory-numbers {
+  display: grid;
+  grid-template-columns: repeat(11, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.trajectory-block {
+  height: 39px;
+  border: 1px solid #e4dfd6;
+  background: #f1efea;
+}
+
+.trajectory-block.trajectory-block--Continue {
+  background: #dfe9d7;
+}
+
+.trajectory-block.trajectory-block--Soften {
+  background: #fee5aa;
+}
+
+.trajectory-block.trajectory-block--Checkpoint {
+  background: #ffc9b8;
+}
+
+.trajectory-block.trajectory-block--Escalate {
+  background: #f4aaaa;
+}
+
+.trajectory-numbers {
+  margin-top: 6px;
+}
+
+.trajectory-numbers span {
+  color: #616760;
+  font-size: 12px;
+  text-align: center;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@keyframes turn-in {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .replay-turn {
+    animation: none;
+  }
+}
+
+@media (max-width: 620px) {
+  .replay-app {
+    width: min(100% - 28px, 720px);
+    padding-top: 32px;
+  }
+
+  .replay-return {
+    position: static;
+    margin-bottom: 34px;
+  }
+
+  .conversation {
+    padding-top: 58px;
+    padding-bottom: 178px;
+  }
+
+  .conversation h2 {
+    font-size: 23px;
+  }
+
+  .message--emile {
+    width: calc(100% - 38px);
+    padding: 20px;
+  }
+
+  .message--user {
+    padding: 20px;
+  }
+
+  .state-bar {
+    min-height: 48px;
+    padding: 0 14px;
+    font-size: 15px;
+  }
+
+  .state-signals {
+    gap: 8px;
+  }
+
+  .state-signals small {
+    font-size: 12px;
+  }
+
+  .replay-controls {
+    grid-template-columns: 1fr 1.15fr 1fr;
+    gap: 8px;
+  }
+
+  .button,
+  .scenario-picker select {
+    min-height: 44px;
+    padding-inline: 8px;
+    font-size: 14px;
+  }
+
+  .trajectory-block {
+    height: 28px;
+  }
+}

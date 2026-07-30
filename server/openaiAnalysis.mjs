@@ -5,6 +5,7 @@ import { z } from "zod";
 const boundedScore = z.number().min(0).max(1);
 
 const TurnAnalysis = z.object({
+  assistant: z.string().max(600),
   stagePosition: z.number().min(0).max(3),
   stageConfidence: boundedScore,
   meaningfulness: boundedScore,
@@ -21,10 +22,63 @@ const TurnAnalysis = z.object({
     monopitch: boundedScore,
   }),
   appropriateness: z.number().int().min(0).max(100),
-  evidence: z.array(z.string()).min(2).max(4),
-  rationale: z.string(),
-  assistant: z.string(),
+  evidence: z.array(z.string()).length(2),
+  rationale: z.string().max(280),
 });
+
+export function extractStreamedAssistant(text) {
+  const marker = /"assistant"\s*:\s*"/.exec(text);
+  if (!marker) {
+    return "";
+  }
+
+  let value = "";
+  let index = marker.index + marker[0].length;
+
+  while (index < text.length) {
+    const character = text[index];
+    if (character === '"') {
+      break;
+    }
+    if (character !== "\\") {
+      value += character;
+      index += 1;
+      continue;
+    }
+
+    const escape = text[index + 1];
+    if (!escape) {
+      break;
+    }
+    if (escape === "u") {
+      const code = text.slice(index + 2, index + 6);
+      if (!/^[0-9a-f]{4}$/i.test(code)) {
+        break;
+      }
+      value += String.fromCharCode(Number.parseInt(code, 16));
+      index += 6;
+      continue;
+    }
+
+    const escapedCharacters = {
+      '"': '"',
+      "\\": "\\",
+      "/": "/",
+      b: "\b",
+      f: "\f",
+      n: "\n",
+      r: "\r",
+      t: "\t",
+    };
+    if (!(escape in escapedCharacters)) {
+      break;
+    }
+    value += escapedCharacters[escape];
+    index += 2;
+  }
+
+  return value;
+}
 
 const SYSTEM_PROMPT = `
 You are the inference layer for a short, non-clinical behavioural measurement demo.
@@ -86,6 +140,14 @@ to a person such as a GP, someone they trust, or Samaritans on 116 123, free at 
 time. Do not diagnose, explain triggers, offer to resume the forms, or ask a
 follow-up. Use four sentences or fewer.
 
+For ambiguous content that supports only Checkpoint, reserve explicit safety or
+crisis language for clear, direct danger statements or sustained compounding
+evidence. Do not let a single concerning phrase turn the reply into a diagnostic
+or self-harm question.
+
+Return exactly two short evidence items, a rationale under 30 words, and an
+assistant reply under 45 words. Prefer plain, direct language.
+
 The appropriateness field MUST be an integer percentage from 0 to 100 evaluating
 your proposed assistant reply, never a 0-to-1 fraction. Use 90–100 for an excellent
 fit, 75–89 for a good but imperfect fit, and lower scores only for meaningful issues.
@@ -96,7 +158,7 @@ function safeHistory(history) {
     return [];
   }
 
-  return history.slice(-8).map((turn) => ({
+  return history.slice(-6).map((turn) => ({
     user: String(turn.user ?? "").slice(0, 1200),
     assistant: String(turn.assistant ?? "").slice(0, 1200),
     stage: String(turn.stage ?? ""),
@@ -118,6 +180,8 @@ export async function analyzeRecordedTurn({
   reasoningEffort = process.env.OPENAI_REASONING_EFFORT || "none",
   transcriptionModel =
     process.env.OPENAI_TRANSCRIPTION_MODEL || "gpt-4o-transcribe",
+  onTranscript,
+  onAssistantDelta,
 }) {
   if (!isOpenAIConfigured(apiKey)) {
     throw new Error("OPENAI_API_KEY is not configured.");
@@ -147,6 +211,7 @@ export async function analyzeRecordedTurn({
   if (!transcript) {
     throw new Error("The recording did not contain transcribable speech.");
   }
+  onTranscript?.(transcript);
 
   return analyzeTranscript({
     apiKey,
@@ -157,6 +222,7 @@ export async function analyzeRecordedTurn({
     analysisModel,
     reasoningEffort,
     transcriptionModel,
+    onAssistantDelta,
   });
 }
 
@@ -170,6 +236,7 @@ export async function analyzeTranscript({
   reasoningEffort = process.env.OPENAI_REASONING_EFFORT || "none",
   transcriptionModel =
     process.env.OPENAI_TRANSCRIPTION_MODEL || "browser-speech-recognition",
+  onAssistantDelta,
 }) {
   if (!isOpenAIConfigured(apiKey)) {
     throw new Error("OPENAI_API_KEY is not configured.");
@@ -183,10 +250,10 @@ export async function analyzeTranscript({
     apiKey,
     ...(baseURL ? { baseURL } : {}),
   });
-  const response = await client.responses.parse({
+  const request = {
     model: analysisModel,
     reasoning: { effort: reasoningEffort },
-    max_output_tokens: 700,
+    max_output_tokens: 500,
     input: [
       { role: "system", content: SYSTEM_PROMPT },
       {
@@ -203,7 +270,32 @@ export async function analyzeTranscript({
     text: {
       format: zodTextFormat(TurnAnalysis, "behavioural_turn_analysis"),
     },
-  });
+  };
+
+  let response;
+  if (onAssistantDelta) {
+    const stream = client.responses.stream(request);
+    let streamedText = "";
+    let streamedAssistant = "";
+
+    for await (const event of stream) {
+      if (event.type !== "response.output_text.delta") {
+        continue;
+      }
+      streamedText += event.delta;
+      const nextAssistant = extractStreamedAssistant(streamedText);
+      if (nextAssistant.length > streamedAssistant.length) {
+        onAssistantDelta(
+          nextAssistant.slice(streamedAssistant.length),
+          nextAssistant,
+        );
+        streamedAssistant = nextAssistant;
+      }
+    }
+    response = await stream.finalResponse();
+  } else {
+    response = await client.responses.parse(request);
+  }
 
   if (!response.output_parsed) {
     throw new Error("The analysis model did not return a structured result.");

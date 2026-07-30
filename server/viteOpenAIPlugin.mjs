@@ -15,6 +15,21 @@ function sendJson(response, status, payload) {
   response.end(JSON.stringify(payload));
 }
 
+function startEventStream(response) {
+  response.statusCode = 200;
+  response.setHeader(
+    "Content-Type",
+    "application/x-ndjson; charset=utf-8",
+  );
+  response.setHeader("Cache-Control", "no-cache, no-store");
+  response.setHeader("Connection", "keep-alive");
+  response.flushHeaders?.();
+}
+
+function sendStreamEvent(response, payload) {
+  response.write(`${JSON.stringify(payload)}\n`);
+}
+
 async function toWebRequest(request) {
   return new Request(`http://${request.headers.host}${request.url}`, {
     method: request.method,
@@ -108,6 +123,8 @@ export function openAIAnalysisPlugin(env) {
           return;
         }
 
+        let streamStarted = false;
+
         try {
           const webRequest = await toWebRequest(request);
           const formData = await webRequest.formData();
@@ -154,22 +171,66 @@ export function openAIAnalysisPlugin(env) {
             analysisModel: env.OPENAI_ANALYSIS_MODEL || "gpt-5.6",
             reasoningEffort: env.OPENAI_REASONING_EFFORT || "none",
             transcriptionModel,
+            onAssistantDelta(delta, assistant) {
+              if (!streamStarted) {
+                startEventStream(response);
+                streamStarted = true;
+              }
+              sendStreamEvent(response, {
+                type: "assistant.delta",
+                delta,
+                assistant,
+              });
+            },
           };
+
+          if (resolvedTranscript) {
+            startEventStream(response);
+            streamStarted = true;
+            sendStreamEvent(response, {
+              type: "transcript",
+              transcript: resolvedTranscript,
+            });
+          }
+
           const result = resolvedTranscript
             ? await analyzeTranscript({
                 ...common,
                 transcript: resolvedTranscript,
               })
-            : await analyzeRecordedTurn({ ...common, audio });
-          sendJson(response, 200, result);
+            : await analyzeRecordedTurn({
+                ...common,
+                audio,
+                onTranscript(transcribedText) {
+                  if (!streamStarted) {
+                    startEventStream(response);
+                    streamStarted = true;
+                  }
+                  sendStreamEvent(response, {
+                    type: "transcript",
+                    transcript: transcribedText,
+                  });
+                },
+              });
+
+          if (!streamStarted) {
+            startEventStream(response);
+            streamStarted = true;
+          }
+          sendStreamEvent(response, { type: "result", payload: result });
+          response.end();
         } catch (error) {
           console.error("OpenAI analysis failed", error);
-          sendJson(response, 500, {
-            error:
-              error instanceof Error
-                ? error.message
-                : "The recording could not be analyzed.",
-          });
+          const message =
+            error instanceof Error
+              ? error.message
+              : "The recording could not be analyzed.";
+          if (streamStarted) {
+            sendStreamEvent(response, { type: "error", error: message });
+            response.end();
+          } else {
+            sendJson(response, 500, { error: message });
+          }
         }
       });
     },

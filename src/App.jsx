@@ -18,6 +18,7 @@ import {
   Waveform,
 } from "@phosphor-icons/react";
 import { FlintChart } from "./components/FlintChart";
+import { LiteReplay } from "./components/LiteReplay";
 import { DEMO_TURNS } from "./data/demoTurns";
 import { useTurnRecorder } from "./hooks/useTurnRecorder";
 import {
@@ -25,8 +26,10 @@ import {
   buildTtmBeliefSpec,
   buildTtmObservationSpec,
 } from "./lib/flintSpecs";
+import { buildInstantTurn } from "./lib/instantAnalysis";
 import { scoreConversation, summarizeConversation } from "./lib/scoring";
 import "./styles.css";
+import "./dashboardTheme.css";
 
 const DECISION_COPY = {
   Continue: {
@@ -48,9 +51,9 @@ const DECISION_COPY = {
 };
 
 const GAP_COLORS = {
-  capability: "#39bdd2",
-  motivation: "#f5b64d",
-  opportunity: "#9b7bf7",
+  capability: "#6f9f9a",
+  motivation: "#d6a64e",
+  opportunity: "#a385bd",
 };
 
 function formatPercent(value) {
@@ -123,7 +126,14 @@ function MicRail({ active, busy, onToggle, turnCount, elapsed }) {
   );
 }
 
-function AppTabs({ activeTab, turnCount, onChange, apiConfig }) {
+function AppTabs({
+  activeTab,
+  turnCount,
+  onChange,
+  onOpenReplay,
+  replayDisabled,
+  apiConfig,
+}) {
   return (
     <div className="workspace-nav">
       <div className="app-tabs" role="tablist" aria-label="Workspace views">
@@ -147,6 +157,21 @@ function AppTabs({ activeTab, turnCount, onChange, apiConfig }) {
           <ListBullets size={17} weight="bold" />
           Turn ledger
           <span>{turnCount}</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={false}
+          onClick={onOpenReplay}
+          disabled={replayDisabled}
+          title={
+            replayDisabled
+              ? "Finish the current turn before opening replay"
+              : undefined
+          }
+        >
+          <Play size={17} weight="fill" />
+          Lite replay
         </button>
       </div>
 
@@ -533,7 +558,22 @@ function TurnLedger({
 
               <div className="turn-row__assistant">
                 <span className="column-label">Assistant reply</span>
-                <p>{turn.assistant}</p>
+                <p
+                  className={
+                    turn.streamingAssistant ? "streaming-reply" : undefined
+                  }
+                  aria-live={turn.streamingAssistant ? "polite" : undefined}
+                >
+                  {turn.assistant}
+                  {turn.streamingAssistant && (
+                    <span className="streaming-caret" aria-hidden="true" />
+                  )}
+                  {turn.streamingAssistant && !turn.assistant && (
+                    <span className="sr-only">
+                      Assistant reply is streaming
+                    </span>
+                  )}
+                </p>
                 <button
                   className="listen-button"
                   type="button"
@@ -560,6 +600,9 @@ function TurnLedger({
                 >
                   {turn.decision}
                 </span>
+                {turn.provisional && (
+                  <span className="refinement-tag">Streaming with Luna</span>
+                )}
               </div>
 
               {selected && (
@@ -624,6 +667,7 @@ function TurnLedger({
 }
 
 export function App() {
+  const [prototypeView, setPrototypeView] = useState("detailed");
   const [visibleCount, setVisibleCount] = useState(4);
   const [selectedId, setSelectedId] = useState(DEMO_TURNS[3].id);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -657,6 +701,7 @@ export function App() {
   const selectedTurn =
     turns.find((turn) => turn.id === selectedId) ?? latestTurn;
   const summary = summarizeConversation(turns);
+  const analysisBusy = analysisStatus.state === "analyzing";
 
   useEffect(() => {
     let cancelled = false;
@@ -738,10 +783,41 @@ export function App() {
 
   const submitTurn = async ({ transcript = "", blob, durationMs = 0 }) => {
     const startedAt = performance.now();
+    const priorSeconds = latestTurn.timestamp
+      .split(":")
+      .reduce((total, part) => total * 60 + Number(part), 0);
+    const nextSeconds =
+      priorSeconds + Math.max(8, Math.round(durationMs / 1000) + 4);
+    const nextTimestamp = [
+      Math.floor(nextSeconds / 3600),
+      Math.floor((nextSeconds % 3600) / 60),
+      nextSeconds % 60,
+    ]
+      .map((value) => String(value).padStart(2, "0"))
+      .join(":");
+    const id = `live-${Date.now()}`;
+    const hasInstantPreview = Boolean(transcript.trim());
+
     setAnalysisStatus({
       state: "analyzing",
-      message: "Applying the TTM + COM-B rubric…",
+      message: hasInstantPreview
+        ? "Instant estimate ready · Luna is streaming the reply…"
+        : "Transcribing, then applying the rubric…",
     });
+
+    if (hasInstantPreview) {
+      const previewTurn = buildInstantTurn({
+        id,
+        timestamp: nextTimestamp,
+        transcript,
+        durationMs,
+        previousTurns: turns,
+      });
+      setLiveRawTurns((current) => [...current, previewTurn]);
+      setSelectedId(id);
+      setDraftTranscript("");
+    }
+
     const formData = new FormData();
     if (transcript.trim()) {
       formData.append("transcript", transcript.trim());
@@ -770,29 +846,86 @@ export function App() {
       method: "POST",
       body: formData,
     });
-    const payload = await response.json();
     if (!response.ok) {
+      const payload = await response.json();
       throw new Error(payload.error || "The turn could not be analyzed.");
     }
+    if (!response.body) {
+      throw new Error("The analysis stream could not be opened.");
+    }
 
-    const priorSeconds = latestTurn.timestamp
-      .split(":")
-      .reduce((total, part) => total * 60 + Number(part), 0);
-    const nextSeconds =
-      priorSeconds + Math.max(8, Math.round(durationMs / 1000) + 4);
-    const nextTimestamp = [
-      Math.floor(nextSeconds / 3600),
-      Math.floor((nextSeconds % 3600) / 60),
-      nextSeconds % 60,
-    ]
-      .map((value) => String(value).padStart(2, "0"))
-      .join(":");
-    const id = `live-${Date.now()}`;
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let streamBuffer = "";
+    let payload = null;
+
+    const handleStreamEvent = (event) => {
+      if (event.type === "transcript" && !hasInstantPreview) {
+        const previewTurn = buildInstantTurn({
+          id,
+          timestamp: nextTimestamp,
+          transcript: event.transcript,
+          durationMs,
+          previousTurns: turns,
+        });
+        setLiveRawTurns((current) =>
+          current.some((turn) => turn.id === id)
+            ? current
+            : [...current, previewTurn],
+        );
+        setSelectedId(id);
+        setAnalysisStatus({
+          state: "analyzing",
+          message: "Transcript ready · Luna is streaming the reply…",
+        });
+      } else if (event.type === "assistant.delta") {
+        setLiveRawTurns((current) =>
+          current.map((turn) =>
+            turn.id === id
+              ? {
+                  ...turn,
+                  assistant: event.assistant,
+                  streamingAssistant: true,
+                }
+              : turn,
+          ),
+        );
+      } else if (event.type === "result") {
+        payload = event.payload;
+      } else if (event.type === "error") {
+        throw new Error(event.error || "The turn could not be analyzed.");
+      }
+    };
+
+    while (true) {
+      const { value, done } = await reader.read();
+      streamBuffer += decoder.decode(value, { stream: !done });
+      const lines = streamBuffer.split("\n");
+      streamBuffer = lines.pop() || "";
+      for (const line of lines) {
+        if (line.trim()) {
+          handleStreamEvent(JSON.parse(line));
+        }
+      }
+      if (done) {
+        break;
+      }
+    }
+
+    if (streamBuffer.trim()) {
+      handleStreamEvent(JSON.parse(streamBuffer));
+    }
+    if (!payload) {
+      throw new Error("The analysis stream ended before returning a result.");
+    }
+
     const rawTurn = {
       id,
       timestamp: nextTimestamp,
       user: payload.transcript,
       assistant: payload.analysis.assistant,
+      guardGeneratedReply: true,
+      streamingAssistant: false,
       ...payload.analysis,
       responseRubric: {
         tone: payload.analysis.appropriateness,
@@ -801,7 +934,11 @@ export function App() {
       },
     };
 
-    setLiveRawTurns((current) => [...current, rawTurn]);
+    setLiveRawTurns((current) =>
+      current.some((turn) => turn.id === id)
+        ? current.map((turn) => (turn.id === id ? rawTurn : turn))
+        : [...current, rawTurn],
+    );
     setSelectedId(id);
     setDraftTranscript("");
     setAnalysisStatus({
@@ -814,7 +951,7 @@ export function App() {
   };
 
   const handleMicToggle = async () => {
-    if (analysisStatus.state === "analyzing") {
+    if (analysisBusy) {
       return;
     }
 
@@ -911,11 +1048,11 @@ export function App() {
     }
   };
 
-  return (
+  const detailedView = (
     <div className="app-shell">
       <MicRail
         active={isRecording}
-        busy={analysisStatus.state === "analyzing"}
+        busy={analysisBusy}
         onToggle={handleMicToggle}
         turnCount={turns.length}
         elapsed={latestTurn.timestamp}
@@ -937,6 +1074,8 @@ export function App() {
           activeTab={activeTab}
           turnCount={turns.length}
           onChange={setActiveTab}
+          onOpenReplay={() => setPrototypeView("replay")}
+          replayDisabled={isRecording || analysisBusy}
           apiConfig={apiConfig}
         />
 
@@ -954,7 +1093,7 @@ export function App() {
           value={draftTranscript}
           onChange={setDraftTranscript}
           configured={apiConfig.configured}
-          disabled={analysisStatus.state === "analyzing" || isRecording}
+          disabled={analysisBusy || isRecording}
           onSubmit={async () => {
             try {
               await submitTurn({ transcript: draftTranscript });
@@ -997,5 +1136,16 @@ export function App() {
         )}
       </main>
     </div>
+  );
+
+  return prototypeView === "detailed" ? (
+    detailedView
+  ) : (
+    <LiteReplay
+      onReturn={() => {
+        setPrototypeView("detailed");
+        setActiveTab("ledger");
+      }}
+    />
   );
 }
