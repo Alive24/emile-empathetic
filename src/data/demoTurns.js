@@ -120,6 +120,7 @@ const rawTurns = [
     stageConfidence: 0.91,
     meaningfulness: 1,
     absolutist: 1,
+    absolutistTerms: 2,
     features: {
       messageLengthDrop: 0.64,
       tenseCollapse: 0.82,

@@ -23,11 +23,11 @@ test("COM-B formulas preserve the requested coefficients", () => {
     monopitch: 0.5,
   });
 
-  assert.equal(result.capability, 0.65);
+  assert.equal(result.capability, 0.48);
   assert.equal(result.opportunity, 0.7);
   assert.equal(result.motivation, 0.65);
-  assert.equal(result.behaviorScore, 2);
-  assert.equal(result.decisionRisk, 0.66);
+  assert.equal(result.behaviorScore, 1.83);
+  assert.equal(result.decisionRisk, 0.58);
 });
 
 test("opportunity alone cannot escalate the decision layer", () => {
@@ -215,6 +215,14 @@ test("generated checkpoint replies cannot become diagnostic questions", () => {
       evidence: [],
       rationale: "",
       guardGeneratedReply: true,
+      directHarm: {
+        present: true,
+        target: "animal",
+        intentLevel: "desire",
+        immediacy: "vague",
+        repeated: false,
+        figurative: false,
+      },
     },
   ]);
 
@@ -236,4 +244,83 @@ test("streamed structured output exposes partial assistant text", () => {
     ),
     'A quoted "choice" and a new\nline',
   );
+});
+
+test("direct animal-harm evidence overrides ordinary COM-B routing", () => {
+  const common = {
+    assistant: "Response",
+    stagePosition: 2,
+    stageConfidence: 0.7,
+    meaningfulness: 0.8,
+    absolutist: 0,
+    features: {},
+    appropriateness: 90,
+    evidence: [],
+    rationale: "",
+  };
+  const turns = scoreConversation([
+    {
+      ...common,
+      id: "harm-one",
+      user: "I want to kill a rabbit.",
+      directHarm: {
+        present: true,
+        target: "animal",
+        intentLevel: "desire",
+        immediacy: "vague",
+        repeated: false,
+        figurative: false,
+      },
+    },
+    {
+      ...common,
+      id: "harm-two",
+      user: "I'm going to kill a rabbit.",
+      ttmApplicable: false,
+      directHarm: {
+        present: true,
+        target: "animal",
+        intentLevel: "intent",
+        immediacy: "near_term",
+        repeated: true,
+        figurative: false,
+      },
+    },
+  ]);
+
+  assert.equal(turns[0].decision, "Checkpoint");
+  assert.equal(turns[1].decision, "Escalate");
+  assert.equal(turns[1].ttmApplicable, false);
+  assert.equal(turns[1].stagePosition, turns[0].stagePosition);
+});
+
+test("crying alone does not become a checkpoint without a calculated gap", () => {
+  const [turn] = scoreConversation([
+    {
+      id: "crying",
+      user: "I'm really crying.",
+      assistant: "Response",
+      stagePosition: 2,
+      stageConfidence: 0.5,
+      meaningfulness: 0.5,
+      absolutist: 0,
+      features: {
+        lengthDrop: 0,
+        tenseCollapse: 0,
+        treatmentSelfBlame: 0,
+        speechRateDrop: null,
+        pauseRatioElevated: null,
+        cannotTalkLong: 0,
+        lateNight: 0,
+        interruption: 0,
+        minimalAcknowledgement: 0,
+        monopitch: null,
+      },
+      appropriateness: 90,
+      evidence: [],
+      rationale: "",
+    },
+  ]);
+
+  assert.equal(turn.decision, "Continue");
 });

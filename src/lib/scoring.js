@@ -13,7 +13,7 @@ export const DECISION_ORDER = {
 };
 
 const clamp = (value, min = 0, max = 1) =>
-  Math.min(max, Math.max(min, value));
+  Math.min(max, Math.max(min, Number(value) || 0));
 
 const round = (value, precision = 2) => {
   const factor = 10 ** precision;
@@ -23,7 +23,7 @@ const round = (value, precision = 2) => {
 const DIAGNOSTIC_CHECK_PATTERN =
   /\b(?:are you safe|hurting yourself|hurt yourself|suicid(?:e|al)|self[- ]harm)\b/i;
 
-function guardGeneratedAssistant(decision, assistant) {
+function guardGeneratedAssistant(decision, assistant, directHarm) {
   if (
     decision === "Checkpoint" &&
     DIAGNOSTIC_CHECK_PATTERN.test(assistant)
@@ -31,12 +31,15 @@ function guardGeneratedAssistant(decision, assistant) {
     return "Do you want to keep going with one small step, pause and come back to this, or involve someone you trust?";
   }
 
-  if (decision === "Escalate") {
+  if (decision === "Escalate" && !directHarm?.present) {
     return "This seems like more than I can help with. Please contact someone you trust or local emergency support now. I’ll stop the bill task here.";
   }
 
   return assistant;
 }
+
+const featureValue = (features, currentName, legacyName) =>
+  clamp(features?.[currentName] ?? features?.[legacyName]);
 
 export function stageName(position) {
   const stage = TTM_STAGES.reduce((nearest, candidate) =>
@@ -49,24 +52,29 @@ export function stageName(position) {
   return stage.name;
 }
 
-export function scoreComb(features) {
+export function scoreComb(features = {}) {
   const capability = clamp(
-    0.3 * features.messageLengthDrop +
-      0.3 * features.tenseCollapse +
-      0.2 * features.speechRateDrop +
-      0.2 * features.pauseRatioElevated,
+    0.25 * featureValue(features, "lengthDrop", "messageLengthDrop") +
+      0.25 * featureValue(features, "tenseCollapse") +
+      0.3 * featureValue(features, "treatmentSelfBlame") +
+      0.1 * featureValue(features, "speechRateDrop") +
+      0.1 * featureValue(features, "pauseRatioElevated"),
   );
 
   const opportunity = clamp(
-    0.5 * features.cantTalkLong +
-      0.3 * features.lateNight +
-      0.2 * features.interruptionMentioned,
+    0.5 * featureValue(features, "cannotTalkLong", "cantTalkLong") +
+      0.3 * featureValue(features, "lateNight") +
+      0.2 * featureValue(features, "interruption", "interruptionMentioned"),
   );
 
   const motivation = clamp(
-    0.4 * features.minimalAcknowledgment +
-      0.3 * features.noQuestionLastTwoTurns +
-      0.3 * features.monopitch,
+    0.4 * featureValue(features, "minimalAcknowledgement", "minimalAcknowledgment") +
+      0.3 * featureValue(
+        features,
+        "noQuestionInLastTwoTurns",
+        "noQuestionLastTwoTurns",
+      ) +
+      0.3 * featureValue(features, "monopitch"),
   );
 
   return {
@@ -80,68 +88,134 @@ export function scoreComb(features) {
   };
 }
 
+function isBillInspectionRequest(text = "") {
+  return /\b(itemi[sz]ed bill|statement|EOB)\b/i.test(text) &&
+    /\b(check|inspect|look at|review|find|open)\b/i.test(text);
+}
+
+function harmRequiresEscalation(directHarm = {}) {
+  if (!directHarm.present || directHarm.figurative) {
+    return false;
+  }
+
+  const actionOrPlan = ["plan", "action_in_progress"].includes(
+    directHarm.intentLevel,
+  );
+  const directIntent = directHarm.intentLevel === "intent";
+  return (
+    actionOrPlan ||
+    directHarm.immediacy === "immediate" ||
+    (directHarm.repeated && directIntent)
+  );
+}
+
+function hasRecentCheckpoint(scored) {
+  return scored.slice(-3).some((turn) => turn.decision === "Checkpoint");
+}
+
 export function scoreConversation(rawTurns) {
   const scored = [];
 
   for (const raw of rawTurns) {
     const previous = scored.at(-1);
     const twoBack = scored.at(-2);
-    const noQuestionLastTwoTurns =
-      previous &&
-      !raw.user.includes("?") &&
-      !previous.user.includes("?")
-        ? 1
-        : 0;
-
-    const comb = scoreComb({
+    const priorAssistantTurns = scored.slice(-2);
+    const noQuestionLastTwoTurns = Boolean(
+      previous && !raw.user.includes("?") && !previous.user.includes("?"),
+    )
+      ? 1
+      : 0;
+    const billExposure = priorAssistantTurns.some((turn) =>
+      isBillInspectionRequest(turn.assistant),
+    );
+    const normalizedFeatures = {
       ...raw.features,
-      noQuestionLastTwoTurns,
-    });
-
+      noQuestionInLastTwoTurns: noQuestionLastTwoTurns,
+      billExposure,
+    };
+    const comb = scoreComb(normalizedFeatures);
+    const ttmApplicable = raw.ttmApplicable !== false;
+    const stagePosition = ttmApplicable
+      ? clamp(raw.stagePosition, 0, 3)
+      : previous?.stagePosition ?? clamp(raw.stagePosition, 0, 3);
     const stageRegression = Boolean(
-      previous && previous.stagePosition - raw.stagePosition >= 0.6,
+      ttmApplicable && previous && previous.stagePosition - stagePosition >= 0.6,
     );
     const sustainedRegression = Boolean(
-      previous &&
+      ttmApplicable &&
+        previous &&
         twoBack &&
         twoBack.stagePosition > previous.stagePosition &&
-        previous.stagePosition > raw.stagePosition &&
-        twoBack.stagePosition - raw.stagePosition >= 1,
+        previous.stagePosition > stagePosition &&
+        twoBack.stagePosition - stagePosition >= 1,
+    );
+    const sustainedCapabilityGap = Boolean(
+      previous && previous.capability >= 0.6 && comb.capability >= 0.6,
+    );
+    const sustainedAbsolutist = Boolean(
+      previous &&
+        (previous.absolutist ?? 0) > 0.05 &&
+        (raw.absolutist ?? 0) > 0.05 &&
+        (raw.absolutistTerms ?? 0) >= 2,
     );
     const absolutistSpike = Boolean(
-      raw.absolutist >= 0.65 &&
-        (!previous || raw.absolutist - previous.absolutist >= 0.45),
+      (raw.absolutistTerms ?? 0) >= 2 &&
+        scored.length >= 2 &&
+        scored.slice(-2).every((turn) => (turn.absolutistTerms ?? 0) === 0),
     );
+    // Opportunity remains observable, but a time or interruption constraint alone
+    // must not take over the routing layer.
+    const routingGap = Math.max(comb.capability, comb.motivation);
+    const checkpointThreshold = billExposure ? 0.45 : 0.6;
+    const voiceCompounding = Boolean(
+      normalizedFeatures.monopitch != null &&
+        normalizedFeatures.pauseRatioElevated != null &&
+        normalizedFeatures.monopitch >= 0.6 &&
+        normalizedFeatures.pauseRatioElevated >= 0.6 &&
+        comb.capability >= 0.6,
+    );
+    const escalationEvidence = Boolean(
+      (stageRegression && comb.capability >= 0.6) ||
+        sustainedAbsolutist ||
+        (normalizedFeatures.tenseCollapse >= 0.6 && sustainedCapabilityGap) ||
+        voiceCompounding,
+    );
+    const directHarm = raw.directHarm ?? { present: false };
 
     let decision = "Continue";
-
-    if (
-      sustainedRegression &&
-      comb.capability >= 0.62 &&
-      raw.absolutist >= 0.7
-    ) {
+    if (harmRequiresEscalation(directHarm)) {
       decision = "Escalate";
-    } else if (stageRegression || absolutistSpike) {
+    } else if (directHarm.present && !directHarm.figurative) {
       decision = "Checkpoint";
-    } else if (comb.capability >= 0.28 || comb.motivation >= 0.32) {
+    } else if (escalationEvidence) {
+      decision = "Escalate";
+    } else if (
+      stageRegression ||
+      routingGap >= checkpointThreshold ||
+      absolutistSpike
+    ) {
+      decision = hasRecentCheckpoint(scored) ? "Soften" : "Checkpoint";
+    } else if (routingGap >= 0.3 || comb.motivation > 0.5) {
       decision = "Soften";
     }
 
     scored.push({
       ...raw,
       assistant: raw.guardGeneratedReply
-        ? guardGeneratedAssistant(decision, raw.assistant)
+        ? guardGeneratedAssistant(decision, raw.assistant, directHarm)
         : raw.assistant,
       ...comb,
-      stage: stageName(raw.stagePosition),
+      stagePosition,
+      stage: stageName(stagePosition),
+      ttmApplicable,
       stageRegression,
       sustainedRegression,
+      sustainedCapabilityGap,
+      sustainedAbsolutist,
       absolutistSpike,
+      billExposure,
       decision,
-      featureInputs: {
-        ...raw.features,
-        noQuestionLastTwoTurns,
-      },
+      featureInputs: normalizedFeatures,
     });
   }
 

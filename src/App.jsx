@@ -551,7 +551,11 @@ function TurnLedger({
               </div>
 
               <div className="turn-row__state">
-                <span className="column-label">User state · inferred</span>
+                <span className="column-label">
+                  {turn.ttmApplicable === false
+                    ? "TTM · retained prior stage"
+                    : "TTM observation"}
+                </span>
                 <strong>{turn.stage}</strong>
                 <CompactGaps turn={turn} />
               </div>
@@ -646,6 +650,18 @@ function TurnLedger({
                   <div className="turn-evidence__signals">
                     <span>Signals / evidence</span>
                     <div>
+                      {turn.ttmApplicable === false && (
+                        <span>TTM not applicable to this turn</span>
+                      )}
+                      {turn.billExposure && <span>billExposure window</span>}
+                      {turn.directHarm?.present && (
+                        <span>
+                          Direct harm · {turn.directHarm.target} · {turn.directHarm.intentLevel}
+                        </span>
+                      )}
+                      {turn.stageRegression && <span>stage regression</span>}
+                      {turn.sustainedCapabilityGap && <span>sustained capability gap</span>}
+                      {turn.sustainedAbsolutist && <span>sustained absolutist ratio</span>}
                       {turn.evidence.map((signal) => (
                         <span key={signal}>{signal}</span>
                       ))}
@@ -801,8 +817,8 @@ export function App() {
     setAnalysisStatus({
       state: "analyzing",
       message: hasInstantPreview
-        ? "Instant estimate ready · Luna is streaming the reply…"
-        : "Transcribing, then applying the rubric…",
+        ? "Instant estimate ready · extracting, routing, and checking the reply…"
+        : "Transcribing, extracting evidence, and routing…",
     });
 
     if (hasInstantPreview) {
@@ -832,11 +848,32 @@ export function App() {
     formData.append(
       "history",
       JSON.stringify(
-        turns.map(({ user, assistant, stage, decision }) => ({
+        turns.map(({
           user,
           assistant,
           stage,
+          stagePosition,
+          stageConfidence,
+          meaningfulness,
+          absolutist,
+          absolutistTerms,
+          features,
           decision,
+          ttmApplicable,
+          directHarm,
+        }) => ({
+          user,
+          assistant,
+          stage,
+          stagePosition,
+          stageConfidence,
+          meaningfulness,
+          absolutist,
+          absolutistTerms,
+          features,
+          decision,
+          ttmApplicable,
+          directHarm,
         })),
       ),
     );
@@ -927,11 +964,6 @@ export function App() {
       guardGeneratedReply: true,
       streamingAssistant: false,
       ...payload.analysis,
-      responseRubric: {
-        tone: payload.analysis.appropriateness,
-        informationLoad: payload.analysis.appropriateness,
-        safety: payload.analysis.appropriateness,
-      },
     };
 
     setLiveRawTurns((current) =>
